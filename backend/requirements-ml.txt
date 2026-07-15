@@ -1,0 +1,20 @@
+# Optional heavy ML dependencies for real transcription + diarization.
+# Install these (in addition to requirements.txt) to enable actual inference.
+#
+#   pip install -r requirements.txt
+#   pip install -r requirements-ml.txt
+#
+# A CUDA-capable GPU is strongly recommended; CPU works but is slow.
+
+# Transcription. whisperx gives word-level timestamps + better speaker/text
+# alignment. Plain openai-whisper also works (the pipeline detects whichever
+# is installed).
+whisperx==3.1.1
+# openai-whisper==20231117   # alternative to whisperx
+
+# Diarization
+pyannote.audio==3.3.2
+
+# Torch is pulled in transitively but pin it here if you need a specific build
+# (e.g. a CUDA wheel from the PyTorch index).
+# torch==2.5.1
