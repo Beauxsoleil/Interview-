@@ -1,0 +1,15 @@
+# --- Core web stack (always required) ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-multipart==0.0.20
+anthropic==0.116.0
+
+# --- Optional ML inference stack ---
+# These are heavy (torch, etc.) and are only needed to run *real* diarization
+# and transcription. The app runs without them using a stub pipeline backend,
+# so you can validate the end-to-end flow before installing them.
+#
+# Install with:  pip install -r requirements-ml.txt
