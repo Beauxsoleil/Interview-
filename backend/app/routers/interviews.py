@@ -274,10 +274,11 @@ def extract_profile(interview_id: int, db: Session = Depends(get_db)):
     if not interview.transcript:
         raise HTTPException(400, "Interview has no transcript to profile.")
     try:
+        # Runs in its own session; the returned instance is detached but fully
+        # loaded, so serialize it directly (don't touch it with this session).
         profile = jobs.run_profile_extraction(interview.id)
     except ProfileExtractionError as e:
         raise HTTPException(400, str(e))
-    db.refresh(profile)
     return ProfileOut.from_orm_profile(profile)
 
 

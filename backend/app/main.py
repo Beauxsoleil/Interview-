@@ -13,6 +13,10 @@ from .models import InterviewStatus
 from .pipeline import runner
 from .routers import applicants, interviews, labels
 
+# Create tables eagerly at import so the app works under uvicorn, tests, and
+# any other entrypoint alike (create_all is idempotent and cheap on SQLite).
+init_db()
+
 app = FastAPI(title="Interview Transcription & Applicant Profiling", version="0.1.0")
 
 # Local-first: the frontend dev server runs on a different port. In production
@@ -23,11 +27,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    init_db()
 
 
 app.include_router(applicants.router)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -39,6 +40,16 @@ class Settings(BaseSettings):
     hf_token: str | None = None
     # Optional hint; if None, diarization decides the number of speakers.
     default_num_speakers: int | None = None
+
+    @field_validator(
+        "anthropic_api_key", "hf_token", "default_num_speakers", mode="before"
+    )
+    @classmethod
+    def _blank_env_is_none(cls, v):
+        """Treat blank values in .env (e.g. a copied .env.example) as unset."""
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
 
     @property
     def audio_dir(self) -> Path:

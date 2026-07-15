@@ -86,6 +86,13 @@ export default function InterviewDetailPage() {
               {iv.title ? `${iv.title} · ` : ""}
               {formatDate(iv.interview_date)}
               {iv.audio_filename ? ` · ${iv.audio_filename}` : ""}
+              {" · "}
+              <Link
+                to={`/?applicant_id=${iv.applicant_id}`}
+                className="text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+              >
+                all interviews for this applicant
+              </Link>
             </p>
           </div>
           <div className="flex items-center gap-2">

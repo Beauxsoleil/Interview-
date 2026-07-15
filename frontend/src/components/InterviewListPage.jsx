@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { JobBadge, LabelChip, StatusBadge, formatDate } from "../lib/ui.jsx";
 import UploadModal from "./UploadModal.jsx";
 
 export default function InterviewListPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [interviews, setInterviews] = useState([]);
+  const [applicants, setApplicants] = useState([]);
   const [labels, setLabels] = useState([]);
   const [meta, setMeta] = useState({ statuses: [] });
+  // applicant_id is URL-driven so "view this applicant's interviews" is linkable.
   const [filters, setFilters] = useState({
     q: "",
     status: "",
     label_id: "",
+    applicant_id: searchParams.get("applicant_id") || "",
     sort: "date",
     order: "desc",
   });
@@ -26,9 +30,16 @@ export default function InterviewListPage() {
   }, [filters]);
 
   useEffect(() => {
+    api.listApplicants().then(setApplicants).catch(() => {});
     api.listLabels().then(setLabels).catch(() => {});
     api.meta().then(setMeta).catch(() => {});
   }, []);
+
+  // Keep the applicant filter in the URL (and react to link navigation).
+  useEffect(() => {
+    const fromUrl = searchParams.get("applicant_id") || "";
+    setFilters((f) => (f.applicant_id === fromUrl ? f : { ...f, applicant_id: fromUrl }));
+  }, [searchParams]);
 
   useEffect(() => {
     load();
@@ -46,7 +57,12 @@ export default function InterviewListPage() {
     return () => clearInterval(pollRef.current);
   }, [interviews, load]);
 
-  const setFilter = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
+  const setFilter = (k, v) => {
+    setFilters((f) => ({ ...f, [k]: v }));
+    if (k === "applicant_id") {
+      setSearchParams(v ? { applicant_id: v } : {}, { replace: true });
+    }
+  };
 
   return (
     <div>
@@ -63,6 +79,17 @@ export default function InterviewListPage() {
           onChange={(e) => setFilter("q", e.target.value)}
           placeholder="Search transcripts, profiles, applicants…"
           className="input max-w-xs flex-1"
+        />
+        <Select
+          value={filters.applicant_id}
+          onChange={(v) => setFilter("applicant_id", v)}
+          options={[
+            ["", "All applicants"],
+            ...applicants.map((a) => [
+              a.id,
+              `${a.name} (${a.interview_count})`,
+            ]),
+          ]}
         />
         <Select
           value={filters.status}
@@ -139,7 +166,10 @@ export default function InterviewListPage() {
       <UploadModal
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onCreated={() => load()}
+        onCreated={() => {
+          load();
+          api.listApplicants().then(setApplicants).catch(() => {});
+        }}
       />
     </div>
   );
