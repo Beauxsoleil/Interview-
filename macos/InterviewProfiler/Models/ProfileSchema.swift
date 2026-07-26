@@ -29,7 +29,7 @@ struct ProfileFacts: Equatable {
     @Guide(description: "Prior military or uniformed service: branch, years, role, discharge type. Use \"not mentioned\" if absent.")
     var priorServiceHistory: String
 
-    @Guide(description: "Legal history: arrests, charges, convictions, citations. Use \"not mentioned\" if absent.")
+    @Guide(description: "Legal status and history: arrests, charges, convictions, citations, and any current standing such as pending charges, probation, or parole. Use \"not mentioned\" if absent.")
     var legalHistory: String
 
     @Guide(description: "Highest level of education completed, plus field of study if stated. Use \"not mentioned\" if absent.")
@@ -105,7 +105,7 @@ struct ExtractedProfile: Codable, Equatable {
         ("Age", \.age),
         ("Physical health", \.physicalHealth),
         ("Prior service history", \.priorServiceHistory),
-        ("Legal history", \.legalHistory),
+        ("Legal status & history", \.legalHistory),
         ("Education level", \.educationLevel),
         ("Marital status", \.maritalStatus),
         ("Dependents", \.numberOfDependents),

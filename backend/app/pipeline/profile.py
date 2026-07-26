@@ -10,6 +10,11 @@ from __future__ import annotations
 from ..config import settings
 from ..schemas import ApplicantProfile
 
+# Per-field guidance is carried in the system prompt rather than in the Pydantic
+# field descriptions. Pydantic emits those as a sibling of `$ref` (because each
+# field is a ProfileField object), and that sibling is dropped when the schema
+# is dereferenced — so the model would never see them. The descriptions stay on
+# the model for documentation; this prompt is what actually reaches Claude.
 SYSTEM_PROMPT = """\
 You extract a structured profile of the APPLICANT from an interview transcript.
 
@@ -21,6 +26,22 @@ Rules:
   the evidence.
 - For each field, include a short supporting quote or paraphrase as evidence,
   or null when the field is "not mentioned".
+- Keep each value under 20 words. Answer each field independently; do not carry
+  information from one field into another.
+
+Fields:
+- age: the applicant's age in years, digits only (e.g. "26").
+- physical_health: injuries, conditions, surgeries, limitations, fitness.
+- prior_service_history: prior military or uniformed service — branch, years,
+  role, and discharge type.
+- legal_history: legal status and history — arrests, charges, convictions,
+  citations, and current standing such as pending charges, probation, or parole.
+- education_level: highest level of education completed, plus field of study if
+  stated.
+- marital_status: single, married, divorced, separated, or widowed.
+- number_of_dependents: number of dependents or children.
+- tattoos_brandings_piercings: tattoos, brandings, or piercings, including body
+  location.
 - free_text_notes: a concise summary of the applicant's stated goals,
   motivations, and any other relevant flags. Empty string if nothing notable.
 """

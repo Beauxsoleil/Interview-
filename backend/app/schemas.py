@@ -34,14 +34,43 @@ class ProfileField(BaseModel):
 
 
 class ApplicantProfile(BaseModel):
-    age: ProfileField = Field(default_factory=ProfileField)
-    physical_health: ProfileField = Field(default_factory=ProfileField)
-    prior_service_history: ProfileField = Field(default_factory=ProfileField)
-    legal_history: ProfileField = Field(default_factory=ProfileField)
-    education_level: ProfileField = Field(default_factory=ProfileField)
-    marital_status: ProfileField = Field(default_factory=ProfileField)
-    number_of_dependents: ProfileField = Field(default_factory=ProfileField)
-    tattoos_brandings_piercings: ProfileField = Field(default_factory=ProfileField)
+    age: ProfileField = Field(
+        default_factory=ProfileField,
+        description="The applicant's age in years, digits only (e.g. \"26\").",
+    )
+    physical_health: ProfileField = Field(
+        default_factory=ProfileField,
+        description="Physical health: injuries, conditions, surgeries, fitness.",
+    )
+    prior_service_history: ProfileField = Field(
+        default_factory=ProfileField,
+        description="Prior military or uniformed service: branch, years, role, "
+        "discharge type.",
+    )
+    legal_history: ProfileField = Field(
+        default_factory=ProfileField,
+        description="Legal status and history: arrests, charges, convictions, "
+        "citations, and any current standing such as pending charges, "
+        "probation, or parole.",
+    )
+    education_level: ProfileField = Field(
+        default_factory=ProfileField,
+        description="Highest level of education completed, plus field of study "
+        "if stated.",
+    )
+    marital_status: ProfileField = Field(
+        default_factory=ProfileField,
+        description="Marital status: single, married, divorced, separated, or "
+        "widowed.",
+    )
+    number_of_dependents: ProfileField = Field(
+        default_factory=ProfileField,
+        description="Number of dependents or children.",
+    )
+    tattoos_brandings_piercings: ProfileField = Field(
+        default_factory=ProfileField,
+        description="Tattoos, brandings, or piercings, including body location.",
+    )
     free_text_notes: str = Field(
         default="",
         description="Free-text summary: stated goals, motivations, and other "

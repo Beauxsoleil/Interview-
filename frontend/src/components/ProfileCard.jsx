@@ -2,7 +2,7 @@ const FIELDS = [
   ["age", "Age"],
   ["physical_health", "Physical health"],
   ["prior_service_history", "Prior service history"],
-  ["legal_history", "Legal history"],
+  ["legal_history", "Legal status & history"],
   ["education_level", "Education level"],
   ["marital_status", "Marital status"],
   ["number_of_dependents", "Dependents"],
