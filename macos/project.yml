@@ -1,0 +1,55 @@
+# XcodeGen spec — generates InterviewProfiler.xcodeproj deterministically.
+#
+#   brew install xcodegen
+#   cd macos && xcodegen generate && open InterviewProfiler.xcodeproj
+#
+# Using XcodeGen rather than a checked-in .pbxproj keeps the project readable
+# and avoids merge conflicts in generated Xcode internals.
+
+name: InterviewProfiler
+
+options:
+  bundleIdPrefix: com.local.interviewprofiler
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    # The pipeline hands @Model objects between a @MainActor coordinator and
+    # background transcription. That is safe as written (every mutation lands
+    # back on the main actor) but Swift 6 language mode flags the closures as
+    # non-Sendable. Start at minimal and tighten once it builds.
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_HARDENED_RUNTIME: YES
+    # The app ships no bundled model weights and links only system frameworks.
+    DEAD_CODE_STRIPPING: YES
+
+targets:
+  InterviewProfiler:
+    type: application
+    platform: macOS
+    sources:
+      - path: InterviewProfiler
+        excludes:
+          - "Resources/Info.plist"
+          - "Resources/InterviewProfiler.entitlements"
+    settings:
+      base:
+        PRODUCT_NAME: InterviewProfiler
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.interviewprofiler
+        INFOPLIST_FILE: InterviewProfiler/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: InterviewProfiler/Resources/InterviewProfiler.entitlements
+        # Personal-team local development; switch to your own signing identity
+        # if you want to run this on more than one Mac.
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_EMIT_LOC_STRINGS: YES
+        ENABLE_PREVIEWS: YES
+    dependencies:
+      - sdk: SwiftUI.framework
+      - sdk: SwiftData.framework
+      - sdk: FoundationModels.framework
+      - sdk: Speech.framework
+      - sdk: AVFoundation.framework

@@ -21,3 +21,10 @@ frontend/dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Xcode / macOS app
+macos/*.xcodeproj/
+macos/*.xcworkspace/
+macos/DerivedData/
+xcuserdata/
+*.xcuserstate

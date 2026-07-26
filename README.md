@@ -1,5 +1,26 @@
 # Interview Transcription & Applicant Profiling
 
+Turn recorded interview audio into diarized, speaker-labeled transcripts and
+structured applicant profiles.
+
+**Two implementations, same data model and product rules:**
+
+| | [`macos/`](macos/) — native app | [`backend/`](backend/) + [`frontend/`](frontend/) — web app |
+| --- | --- | --- |
+| Transcription | Apple `SpeechAnalyzer` (on device) | Whisper / whisperx |
+| Diarization | Heuristic (pluggable) | `pyannote.audio` |
+| Summary + profile | Apple Intelligence (on device) | Claude API |
+| Setup | Xcode, no keys | Python + optional GPU, API key |
+| Data leaves the machine | Never | Transcript → Claude API |
+| Requires | macOS 26, Apple Silicon | Any OS |
+
+Use the **macOS app** on an Apple Silicon Mac when privacy and zero setup matter
+most; use the **web app** for multi-user, non-Mac, or highest-accuracy work.
+The rest of this file documents the web app — see [`macos/README.md`](macos/README.md)
+for the desktop build.
+
+---
+
 A local-first web app for turning recorded interview audio into diarized,
 speaker-labeled transcripts and structured applicant profiles.
 
