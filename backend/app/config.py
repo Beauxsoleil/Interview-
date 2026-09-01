@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from interview_pipeline_core import PipelineConfig
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -58,6 +59,15 @@ class Settings(BaseSettings):
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.audio_dir.mkdir(parents=True, exist_ok=True)
+
+    def pipeline_config(self) -> PipelineConfig:
+        """Translate app settings into the shared pipeline's explicit config."""
+        return PipelineConfig(
+            pipeline_backend=self.pipeline_backend,
+            whisper_model=self.whisper_model,
+            hf_token=self.hf_token,
+            default_num_speakers=self.default_num_speakers,
+        )
 
 
 settings = Settings()

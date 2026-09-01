@@ -7,6 +7,9 @@ pydantic-settings==2.7.1
 python-multipart==0.0.20
 anthropic==0.116.0
 
+# Shared diarization/transcription/merge package (kept application-independent).
+-e ../interview-pipeline-core
+
 # --- Optional ML inference stack ---
 # These are heavy (torch, etc.) and are only needed to run *real* diarization
 # and transcription. The app runs without them using a stub pipeline backend,

@@ -6,11 +6,11 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from interview_pipeline_core import real_backend_available, using_stub
 
 from .config import settings
 from .database import init_db
 from .models import InterviewStatus
-from .pipeline import runner
 from .routers import applicants, interviews, labels
 
 # Create tables eagerly at import so the app works under uvicorn, tests, and
@@ -38,8 +38,10 @@ app.include_router(labels.router)
 def health() -> dict:
     return {
         "status": "ok",
-        "pipeline_backend": "stub" if runner.using_stub() else "ml",
-        "real_backend_available": runner.real_backend_available(),
+        "pipeline_backend": (
+            "stub" if using_stub(settings.pipeline_config()) else "ml"
+        ),
+        "real_backend_available": real_backend_available(),
         "profile_extraction_enabled": bool(settings.anthropic_api_key),
         "profile_model": settings.profile_model,
     }

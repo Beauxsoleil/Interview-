@@ -45,13 +45,15 @@ backend/   FastAPI + SQLAlchemy (SQLite) + a thread-pool job runner
     schemas.py           API + structured-profile schemas
     jobs.py              background transcription + profile jobs
     pipeline/
-      diarization.py     pyannote wrapper (lazy import)
-      transcription.py   whisperx / whisper wrapper (lazy import)
-      merge.py           speaker <-> text merge logic
-      stub.py            no-dependency sample backend
-      runner.py          backend selection + orchestration
-      profile.py         Claude structured-output extraction
+      profile.py         Claude structured-output extraction (app-specific)
     routers/             applicants, interviews, labels
+interview-pipeline-core/  installable, app-independent audio pipeline package
+  src/interview_pipeline_core/
+    diarization.py       pyannote wrapper (lazy import)
+    transcription.py     whisperx / whisper wrapper (lazy import)
+    merge.py             speaker <-> text merge logic
+    stub.py              no-dependency sample backend
+    runner.py            backend selection + orchestration
 frontend/  React + Vite + Tailwind
   src/
     components/          list, detail, upload, transcript, profile card
