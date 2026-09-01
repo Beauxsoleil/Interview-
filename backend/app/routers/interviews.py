@@ -14,6 +14,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse
+from interview_pipeline_core import render_text
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
@@ -21,7 +22,6 @@ from .. import jobs
 from ..config import settings
 from ..database import get_db
 from ..models import Applicant, Interview, Job, Label, Transcript
-from ..pipeline.merge import render_text
 from ..pipeline.profile import ProfileExtractionError
 from ..schemas import (
     InterviewDetail,

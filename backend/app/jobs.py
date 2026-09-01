@@ -12,12 +12,12 @@ import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
+from interview_pipeline_core import render_text, run_pipeline
+
 from .config import settings
 from .database import SessionLocal
 from .models import Interview, Job, JobState, Profile, Transcript
 from .pipeline import profile as profile_pipeline
-from .pipeline import runner
-from .pipeline.merge import render_text
 
 logger = logging.getLogger("interview.jobs")
 
@@ -64,7 +64,11 @@ def _run_transcription_job(job_id: int) -> None:
         def on_progress(pct: int, stage: str) -> None:
             _update_job(db, job, progress=pct, stage=stage)
 
-        result = runner.run_pipeline(interview.audio_path, on_progress=on_progress)
+        result = run_pipeline(
+            interview.audio_path,
+            on_progress=on_progress,
+            config=settings.pipeline_config(),
+        )
 
         turns = result["turns"]
         speakers: list[str] = result["speakers"]
