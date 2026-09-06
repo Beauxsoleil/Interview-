@@ -89,7 +89,7 @@ def _run_transcription_job(job_id: int) -> None:
 
         # Auto-run profile extraction if configured. A failure here does not
         # fail the transcription job — the transcript is still valuable.
-        if settings.anthropic_api_key:
+        if settings.gemini_api_key:
             try:
                 _extract_and_save_profile(db, interview.id)
             except Exception as e:  # noqa: BLE001

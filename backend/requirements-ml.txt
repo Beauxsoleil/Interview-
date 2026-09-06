@@ -9,12 +9,23 @@
 # Transcription. whisperx gives word-level timestamps + better speaker/text
 # alignment. Plain openai-whisper also works (the pipeline detects whichever
 # is installed).
-whisperx==3.1.1
+whisperx==3.2.0
 # openai-whisper==20231117   # alternative to whisperx
 
 # Diarization
-pyannote.audio==3.3.2
+pyannote.audio==3.1.1
 
 # Torch is pulled in transitively but pin it here if you need a specific build
 # (e.g. a CUDA wheel from the PyTorch index).
-# torch==2.5.1
+torch==2.5.1
+torchaudio==2.5.1
+
+# Compatibility constraints for the pinned WhisperX/pyannote stack.
+numpy==1.26.4
+pandas==2.2.3
+pyannote.core==5.0.0
+pyannote.database==5.0.1
+pyannote.metrics==3.2.1
+pyannote.pipeline==3.0.1
+
+setuptools==80.9.0

@@ -6,7 +6,7 @@ speaker-labeled transcripts and structured applicant profiles.
 > **Sensitive data:** this app stores health, legal, and demographic
 > information. It is built local-only by default — audio and the SQLite database
 > live on local disk, there is no third-party analytics, and the only outbound
-> network call is to the Claude API for profile extraction (only when you
+> network call is to the Gemini API for profile extraction (only when you
 > configure an API key).
 
 ---
@@ -19,7 +19,7 @@ speaker-labeled transcripts and structured applicant profiles.
    better speaker/text alignment).
 4. **Merge** into a labeled transcript (`Speaker 1: …`, `Speaker 2: …`).
 5. **Rename** speakers after the fact (e.g. → *Interviewer* / *Applicant*).
-6. **Extract** a structured applicant profile with the Claude API — into a JSON
+6. **Extract** a structured applicant profile with the Gemini API — into a JSON
    schema first, then rendered as a readable summary card. Fields the transcript
    doesn't cover are flagged *"not mentioned"* rather than guessed.
 7. **Organize** interviews by applicant, status, and custom labels, with a
@@ -50,7 +50,7 @@ backend/   FastAPI + SQLAlchemy (SQLite) + a thread-pool job runner
       merge.py           speaker <-> text merge logic
       stub.py            no-dependency sample backend
       runner.py          backend selection + orchestration
-      profile.py         Claude structured-output extraction
+      profile.py         Gemini structured-output extraction
     routers/             applicants, interviews, labels
 frontend/  React + Vite + Tailwind
   src/
@@ -98,8 +98,8 @@ Edit `backend/.env`:
 
 | Variable | Purpose |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Enables Claude profile extraction. Without it, transcription still works. |
-| `PROFILE_MODEL` | Claude model for extraction (default `claude-opus-4-8`). |
+| `GEMINI_API_KEY` | Enables Gemini profile extraction. Without it, transcription still works. |
+| `PROFILE_MODEL` | Gemini model for extraction (default `gemini-3.6-flash`). |
 | `HF_TOKEN` | HuggingFace token — required by pyannote to download the diarization model. |
 | `PIPELINE_BACKEND` | `auto` (default) uses ML if installed, else stub; `stub` forces the sample backend. |
 | `WHISPER_MODEL` | `tiny`…`large-v3` (default `base`). |

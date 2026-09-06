@@ -63,7 +63,7 @@ function PipelineStatus({ health }) {
         title={
           health.profile_extraction_enabled
             ? `Profile extraction via ${health.profile_model}`
-            : "Set ANTHROPIC_API_KEY to enable profile extraction."
+            : "Set GEMINI_API_KEY to enable profile extraction."
         }
       >
         profile: {health.profile_extraction_enabled ? "on" : "off"}

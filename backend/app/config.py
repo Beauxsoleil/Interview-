@@ -2,7 +2,7 @@
 
 All settings are local-only by default. This app stores health, legal, and
 demographic information, so nothing is sent to third-party analytics and audio
-lives on local disk. The only outbound call is to the Claude API for profile
+lives on local disk. The only outbound LLM call is to the Gemini API for profile
 extraction, and that only happens if an API key is configured.
 """
 from __future__ import annotations
@@ -27,9 +27,9 @@ class Settings(BaseSettings):
     allowed_audio_extensions: tuple[str, ...] = (".mp3", ".wav", ".m4a")
     max_upload_bytes: int = 500 * 1024 * 1024  # 500 MB
 
-    # --- Claude (profile extraction) ---
-    anthropic_api_key: str | None = None
-    profile_model: str = "claude-opus-4-8"
+    # --- Gemini (profile extraction) ---
+    gemini_api_key: str | None = None
+    profile_model: str = "gemini-3.6-flash"
 
     # --- Transcription / diarization ---
     # "auto"    -> use whisperx/whisper + pyannote if installed, else stub
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     default_num_speakers: int | None = None
 
     @field_validator(
-        "anthropic_api_key", "hf_token", "default_num_speakers", mode="before"
+        "gemini_api_key", "hf_token", "default_num_speakers", mode="before"
     )
     @classmethod
     def _blank_env_is_none(cls, v):

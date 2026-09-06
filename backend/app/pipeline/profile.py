@@ -1,4 +1,4 @@
-"""Structured applicant-profile extraction via the Claude API.
+"""Structured applicant-profile extraction via the Gemini API.
 
 We extract INTO a schema (structured JSON) rather than having the model
 free-write a profile. Fields the transcript doesn't cover are returned as
@@ -34,17 +34,18 @@ def extract_profile(
     transcript_text: str, applicant_role: str
 ) -> tuple[ApplicantProfile, str]:
     """Return (profile, model_id). Raises ProfileExtractionError on failure."""
-    if not settings.anthropic_api_key:
+    if not settings.gemini_api_key:
         raise ProfileExtractionError(
-            "ANTHROPIC_API_KEY is not configured; profile extraction is disabled."
+            "GEMINI_API_KEY is not configured; profile extraction is disabled."
         )
 
     try:
-        import anthropic
+        from google import genai
+        from google.genai import types
     except ImportError as e:  # pragma: no cover
-        raise ProfileExtractionError("anthropic SDK is not installed.") from e
+        raise ProfileExtractionError("Google Gen AI SDK is not installed.") from e
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = genai.Client(api_key=settings.gemini_api_key)
 
     user_content = (
         f"The applicant is: {applicant_role}\n\n"
@@ -52,21 +53,22 @@ def extract_profile(
     )
 
     try:
-        response = client.messages.parse(
+        response = client.models.generate_content(
             model=settings.profile_model,
-            max_tokens=4000,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_content}],
-            output_format=ApplicantProfile,
+            contents=user_content,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                response_schema=ApplicantProfile,
+            ),
         )
     except Exception as e:
-        raise ProfileExtractionError(f"Claude API call failed: {e}") from e
+        raise ProfileExtractionError(f"Gemini API call failed: {e}") from e
 
-    if response.stop_reason == "refusal":
-        raise ProfileExtractionError("Model refused to process the transcript.")
-
-    profile = response.parsed_output
+    profile = response.parsed
     if profile is None:
         raise ProfileExtractionError("Model did not return a parseable profile.")
+    if not isinstance(profile, ApplicantProfile):
+        profile = ApplicantProfile.model_validate(profile)
 
     return profile, settings.profile_model
