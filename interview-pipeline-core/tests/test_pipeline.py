@@ -4,6 +4,11 @@ import unittest
 
 from interview_pipeline_core import PipelineConfig, run_pipeline, using_stub
 from interview_pipeline_core.merge import DiarSegment, TextUnit, merge, render_text
+from interview_pipeline_core.transcription import (
+    AudioWindow,
+    _owned_units,
+    audio_windows,
+)
 
 
 class PipelineTests(unittest.TestCase):
@@ -35,7 +40,44 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             PipelineConfig(backend="invalid")
 
+    def test_long_audio_windows_include_context_and_cover_timeline(self) -> None:
+        self.assertEqual(
+            audio_windows(905, 300, 8),
+            [
+                AudioWindow(0, 308, 0, 300),
+                AudioWindow(292, 608, 300, 600),
+                AudioWindow(592, 905, 600, 900),
+                AudioWindow(892, 905, 900, 905),
+            ],
+        )
+
+    def test_overlap_units_are_owned_by_only_one_window(self) -> None:
+        first = AudioWindow(0, 308, 0, 300)
+        second = AudioWindow(292, 608, 300, 600)
+        first_units = _owned_units(
+            [TextUnit(299.7, 300.1, "boundary")], first
+        )
+        second_units = _owned_units(
+            [TextUnit(7.7, 8.1, "boundary")], second
+        )
+
+        self.assertEqual(len(first_units) + len(second_units), 1)
+
+    def test_short_final_window_keeps_its_last_unit(self) -> None:
+        final = AudioWindow(892, 905, 900, 905)
+        units = _owned_units([TextUnit(12.5, 13.0, "done")], final)
+        self.assertEqual(
+            [(u.start, u.end, u.text) for u in units],
+            [(904.5, 905.0, "done")],
+        )
+
+    def test_invalid_chunk_configuration_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            PipelineConfig(
+                transcription_chunk_seconds=10,
+                transcription_overlap_seconds=5,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
-
