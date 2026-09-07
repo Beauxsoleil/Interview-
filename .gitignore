@@ -7,10 +7,20 @@ venv/
 
 # App data (local-only storage: audio, sqlite db)
 backend/data/
+local-test-data/
 *.db
+*.mp3
+*.wav
+*.m4a
+*.srt
+*.vtt
+*.transcript.txt
 
 # Env
 .env
+*firebase-adminsdk*.json
+*service-account*.json
+firebase-credentials.json
 
 # Node / frontend
 node_modules/

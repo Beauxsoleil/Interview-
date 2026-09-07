@@ -7,6 +7,9 @@ async function req(path, options = {}) {
     try {
       const body = await res.json();
       detail = body.detail || detail;
+      if (detail && typeof detail === "object") {
+        detail = detail.message || JSON.stringify(detail);
+      }
     } catch {
       /* ignore */
     }
@@ -54,4 +57,15 @@ export const api = {
   extractProfile: (id) =>
     req(`/api/interviews/${id}/extract-profile`, { method: "POST" }),
   audioUrl: (id) => `/api/interviews/${id}/audio`,
+
+  // Reviewed PIBASE Firestore sync
+  extractSyncProfile: (id) =>
+    req(`/api/interviews/${id}/sync/extract`, { method: "POST" }),
+  findPibaseApplicants: (id, query = "") =>
+    req(`/api/interviews/${id}/sync/candidates?q=${encodeURIComponent(query)}`),
+  proposePibaseSync: (id, payload) =>
+    req(`/api/interviews/${id}/sync/proposal`, json(payload)),
+  confirmPibaseSync: (id, payload) =>
+    req(`/api/interviews/${id}/sync/confirm`, json(payload)),
+  listPibaseSyncLogs: (id) => req(`/api/interviews/${id}/sync/logs`),
 };

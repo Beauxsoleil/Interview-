@@ -177,3 +177,36 @@ class Job(Base):
     )
 
     interview: Mapped[Interview] = relationship(back_populates="jobs")
+
+
+class SyncDraft(Base):
+    """Gemini extraction shaped for a reviewed PIBASE write."""
+
+    __tablename__ = "sync_drafts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    interview_id: Mapped[int] = mapped_column(
+        ForeignKey("interviews.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    data_json: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+
+class SyncLog(Base):
+    """Durable local audit trail for every confirmed Firestore sync."""
+
+    __tablename__ = "sync_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    interview_id: Mapped[int] = mapped_column(
+        ForeignKey("interviews.id", ondelete="CASCADE"), index=True
+    )
+    firestore_applicant_id: Mapped[str] = mapped_column(String(255), index=True)
+    note_id: Mapped[str] = mapped_column(String(255))
+    approved_by: Mapped[str] = mapped_column(String(255))
+    fields_written_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

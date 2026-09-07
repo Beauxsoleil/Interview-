@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     profile_model: str = "gemini-3.6-flash"
 
+    # --- Privileged PIBASE Firestore sync ---
+    google_application_credentials: Path | None = None
+    firestore_project_id: str = "pi-base-a3a09"
+
     # --- Transcription / diarization ---
     # "auto"    -> use whisperx/whisper + pyannote if installed, else stub
     # "stub"    -> always use the deterministic stub backend (no ML deps)
@@ -42,7 +46,11 @@ class Settings(BaseSettings):
     default_num_speakers: int | None = None
 
     @field_validator(
-        "gemini_api_key", "hf_token", "default_num_speakers", mode="before"
+        "gemini_api_key",
+        "hf_token",
+        "default_num_speakers",
+        "google_application_credentials",
+        mode="before",
     )
     @classmethod
     def _blank_env_is_none(cls, v):

@@ -68,6 +68,20 @@ function PipelineStatus({ health }) {
       >
         profile: {health.profile_extraction_enabled ? "on" : "off"}
       </span>
+      <span
+        className={`hidden rounded-full px-2.5 py-1 sm:inline-flex ${
+          health.pibase_sync_enabled
+            ? "bg-emerald-50 text-emerald-700"
+            : "bg-slate-100 text-slate-500"
+        }`}
+        title={
+          health.pibase_sync_enabled
+            ? `Connected to ${health.firestore_project_id}`
+            : "PIBASE sync is not configured on this server."
+        }
+      >
+        PIBASE: {health.pibase_sync_enabled ? "connected" : "off"}
+      </span>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { LabelChip, StatusBadge, formatDate } from "../lib/ui.jsx";
 import ProfileCard from "./ProfileCard.jsx";
+import PibaseSyncPanel from "./PibaseSyncPanel.jsx";
 import TranscriptView from "./TranscriptView.jsx";
 
 export default function InterviewDetailPage() {
@@ -204,6 +205,10 @@ export default function InterviewDetailPage() {
           </div>
         )}
       </div>
+
+      {iv.transcript && !processing && (
+        <PibaseSyncPanel interview={iv} />
+      )}
     </div>
   );
 }

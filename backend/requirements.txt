@@ -6,6 +6,8 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 python-multipart==0.0.20
 google-genai==1.47.0
+firebase-admin==7.5.0
+--editable ../interview-pipeline-core
 
 # --- Optional ML inference stack ---
 # These are heavy (torch, etc.) and are only needed to run *real* diarization
