@@ -20,7 +20,8 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             interview-pipeline-core/pyproject.toml
-      - run: pip install -r backend/requirements.txt
+      - run: pip install -r requirements.txt
+        working-directory: backend
       - run: python -m unittest discover -s tests -v
         working-directory: backend
       - run: python -m unittest discover -s tests -v
