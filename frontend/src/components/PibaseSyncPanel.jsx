@@ -22,11 +22,12 @@ export default function PibaseSyncPanel({ interview }) {
   const [newName, setNewName] = useState(interview.applicant_name || "");
   const [proposal, setProposal] = useState(null);
   const [approved, setApproved] = useState(new Set());
-  const [approvedBy, setApprovedBy] = useState("Recruiter");
+  const [approvedBy, setApprovedBy] = useState("");
   const [unarchive, setUnarchive] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
 
   const targetPayload = useMemo(
     () =>
@@ -82,6 +83,7 @@ export default function PibaseSyncPanel({ interview }) {
     );
     if (!data) return;
     setProposal(data);
+    setRequestId(crypto.randomUUID());
     setApproved(new Set());
     setUnarchive(false);
     setResult(null);
@@ -113,6 +115,12 @@ export default function PibaseSyncPanel({ interview }) {
         approved_fields: [...approved],
         approved_by: approvedBy.trim(),
         unarchive,
+        request_id: requestId,
+        expected_values: Object.fromEntries(
+          proposal.changes
+            .filter((change) => approved.has(change.field))
+            .map((change) => [change.field, change.current_value]),
+        ),
       }),
     );
     if (data) setResult(data);
@@ -141,7 +149,7 @@ export default function PibaseSyncPanel({ interview }) {
 
       <div className="space-y-6 p-5">
         {error && (
-          <div className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <div role="alert" className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {error}
           </div>
         )}
@@ -158,7 +166,9 @@ export default function PibaseSyncPanel({ interview }) {
             <div>
               <StepHeading number="1" title="Choose the PIBASE applicant" />
               <form className="mt-3 flex gap-2" onSubmit={findCandidates}>
+                <label htmlFor="pibase-search" className="sr-only">Search PIBASE applicants</label>
                 <input
+                  id="pibase-search"
                   className="input"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
@@ -276,7 +286,13 @@ export default function PibaseSyncPanel({ interview }) {
                   </div>
                 )}
 
-                <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+                <div className="mt-3 space-y-2 md:hidden">
+                  {proposal.changes.map((change) => (
+                    <ChangeCard key={change.field} change={change} approved={approved.has(change.field)} onToggle={() => toggleField(change.field)} />
+                  ))}
+                </div>
+
+                <div className="mt-3 hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
                   <table className="w-full min-w-[720px] text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                       <tr>
@@ -357,7 +373,7 @@ export default function PibaseSyncPanel({ interview }) {
             )}
 
             {result && (
-              <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              <div role="status" className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                 <p className="font-medium">PIBASE sync completed.</p>
                 <p className="mt-1">
                   Note added. {result.fields_written.length} structured field
@@ -389,4 +405,21 @@ function Value({ value }) {
     return <span className="italic text-slate-400">Not set</span>;
   }
   return <span className="whitespace-pre-wrap">{String(value)}</span>;
+}
+
+function ChangeCard({ change, approved, onToggle }) {
+  const canApprove = change.changed && change.proposed_value != null;
+  return (
+    <article className="rounded-lg border border-slate-200 p-3 text-sm">
+      <label className="flex items-center gap-2 font-medium">
+        <input type="checkbox" disabled={!canApprove} checked={approved} onChange={onToggle} />
+        {FIELD_LABELS[change.field]}
+      </label>
+      <dl className="mt-3 grid grid-cols-2 gap-3">
+        <div><dt className="text-xs text-slate-500">Current</dt><dd><Value value={change.current_value} /></dd></div>
+        <div><dt className="text-xs text-slate-500">Proposed</dt><dd><Value value={change.proposed_value} /></dd></div>
+      </dl>
+      <p className="mt-3 text-xs text-slate-500"><span className="font-medium">Transcript support:</span> {change.evidence || "Not mentioned"}</p>
+    </article>
+  );
 }

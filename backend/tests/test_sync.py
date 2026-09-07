@@ -11,8 +11,13 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
 from app.database import Base
-from app.firestore_sync import ArchivedApplicantError, FirestoreGateway, firebase_configured
-from app.models import Applicant, Interview, SyncDraft, SyncLog
+from app.firestore_sync import (
+    ArchivedApplicantError,
+    FirestoreGateway,
+    SyncConflictError,
+    firebase_configured,
+)
+from app.models import Applicant, Interview, SyncDraft, SyncLog, Transcript, utcnow
 from app.pipeline.sync_profile import GeminiRateLimitError, extract_sync_profile
 from app.routers import sync as sync_routes
 from app.sync_schemas import (
@@ -186,6 +191,20 @@ class FirestoreSyncTests(unittest.TestCase):
         self.assertEqual(applicants[applicant_id]["precedence"], "normal")
         self.assertEqual(applicants[applicant_id]["dependents"], 2)
 
+    def test_confirm_rejects_remote_value_changed_after_proposal(self):
+        gateway = self.gateway({"1": {"name": "Alex", "age": 31, "archived": False}})
+        with self.assertRaises(SyncConflictError):
+            gateway.write_reviewed_sync(
+                applicant_id="1",
+                new_applicant_name=None,
+                approved_values={"age": 32},
+                expected_values={"age": 30},
+                note="Reviewed note",
+                interview_id=7,
+                approved_by="Recruiter",
+                unarchive=False,
+            )
+
     def test_fixed_option_values_do_not_get_guessed(self):
         extraction = FirestoreSyncExtraction.model_validate(
             {
@@ -259,6 +278,15 @@ class FirestoreSyncTests(unittest.TestCase):
         interview = Interview(applicant_id=local_applicant.id)
         db.add(interview)
         db.flush()
+        transcript = Transcript(
+            interview_id=interview.id,
+            text="Applicant: synthetic transcript",
+            segments_json='[{"speaker":"Speaker 1","start":0,"end":1,"text":"synthetic transcript"}]',
+            applicant_speaker="Speaker 1",
+            revision=1,
+            reviewed_at=utcnow(),
+        )
+        db.add(transcript)
         extraction = FirestoreSyncExtraction.model_validate(
             {
                 "applicant_name": {"value": "Taylor", "evidence": "My name is Taylor"},
@@ -271,6 +299,7 @@ class FirestoreSyncTests(unittest.TestCase):
                 interview_id=interview.id,
                 data_json=extraction.model_dump_json(),
                 model="gemini-3.6-flash",
+                source_transcript_revision=1,
             )
         )
         db.commit()
@@ -288,17 +317,21 @@ class FirestoreSyncTests(unittest.TestCase):
         )
         self.assertTrue(health_change.changed)
 
+        request = SyncConfirmRequest(
+            applicant_id="remote-1",
+            approved_fields=["physicalHealth"],
+            approved_by="Recruiter",
+        )
         result = sync_routes.confirm(
             interview.id,
-            SyncConfirmRequest(
-                applicant_id="remote-1",
-                approved_fields=["physicalHealth"],
-                approved_by="Recruiter",
-            ),
+            request,
             db,
             gateway,
         )
         self.assertEqual(result.fields_written, ["physicalHealth"])
+        self.assertEqual(db.query(SyncLog).count(), 1)
+        repeated = sync_routes.confirm(interview.id, request, db, gateway)
+        self.assertEqual(repeated.note_id, result.note_id)
         self.assertEqual(db.query(SyncLog).count(), 1)
         db.close()
 

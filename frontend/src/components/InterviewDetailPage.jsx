@@ -24,8 +24,8 @@ export default function InterviewDetailPage() {
 
   useEffect(() => {
     load().catch((e) => setError(e.message));
-    api.listLabels().then(setLabels).catch(() => {});
-    api.meta().then(setMeta).catch(() => {});
+    api.listLabels().then(setLabels).catch((e) => setError(e.message));
+    api.meta().then(setMeta).catch((e) => setError(e.message));
   }, [load]);
 
   // Poll while processing.
@@ -33,20 +33,29 @@ export default function InterviewDetailPage() {
     clearInterval(pollRef.current);
     const job = iv?.latest_job;
     if (job && ["queued", "running"].includes(job.state)) {
-      pollRef.current = setInterval(() => load().catch(() => {}), 1500);
+      pollRef.current = setInterval(
+        () => load().catch((e) => setError(e.message)),
+        1500,
+      );
     }
     return () => clearInterval(pollRef.current);
   }, [iv, load]);
 
-  if (error) return <p className="text-rose-600">{error}</p>;
+  if (error && !iv) return <p role="alert" className="text-rose-600">{error}</p>;
   if (!iv) return <p className="text-sm text-slate-500">Loading…</p>;
 
   const job = iv.latest_job;
   const processing = job && ["queued", "running"].includes(job.state);
+  const reviewed = Boolean(iv.transcript?.reviewed_at);
 
   async function update(patch) {
-    const updated = await api.updateInterview(id, patch);
-    setIv(updated);
+    setError(null);
+    try {
+      const updated = await api.updateInterview(id, patch);
+      setIv(updated);
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   async function action(fn) {
@@ -65,8 +74,12 @@ export default function InterviewDetailPage() {
   async function remove() {
     if (!confirm("Delete this interview and its audio, transcript, and profile?"))
       return;
-    await api.deleteInterview(id);
-    navigate("/");
+    try {
+      await api.deleteInterview(id);
+      navigate("/");
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   const activeLabelIds = new Set(iv.labels.map((l) => l.id));
@@ -97,7 +110,9 @@ export default function InterviewDetailPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <label htmlFor="interview-status" className="sr-only">Interview status</label>
             <select
+              id="interview-status"
               value={iv.status}
               onChange={(e) => update({ status: e.target.value })}
               className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
@@ -148,10 +163,14 @@ export default function InterviewDetailPage() {
           </button>
           <button
             className="btn-ghost"
-            disabled={busy || processing || !iv.transcript}
+            disabled={busy || processing || !reviewed}
             onClick={() => action(() => api.extractProfile(id))}
             title={
-              !iv.transcript ? "Transcript required first" : "Re-extract profile"
+              !iv.transcript
+                ? "Transcript required first"
+                : !reviewed
+                  ? "Review the transcript and applicant speaker first"
+                  : "Extract a profile from the reviewed revision"
             }
           >
             {iv.profile ? "Re-extract profile" : "Extract profile"}
@@ -166,11 +185,13 @@ export default function InterviewDetailPage() {
         </div>
 
         {error && (
-          <div className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <div role="alert" className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
           </div>
         )}
       </div>
+
+      <WorkflowStatus interview={iv} processing={processing} />
 
       {processing && <ProgressBar job={job} />}
 
@@ -196,7 +217,7 @@ export default function InterviewDetailPage() {
         ) : (
           <div className="card p-8 text-center text-sm text-slate-500">
             No profile extracted yet.
-            {iv.transcript && !processing && (
+            {iv.transcript && !processing && reviewed && (
               <>
                 <br />
                 Use “Extract profile” above to summarize this interview.
@@ -206,7 +227,7 @@ export default function InterviewDetailPage() {
         )}
       </div>
 
-      {iv.transcript && !processing && (
+      {iv.transcript && !processing && reviewed && (
         <PibaseSyncPanel interview={iv} />
       )}
     </div>
@@ -215,7 +236,7 @@ export default function InterviewDetailPage() {
 
 function ProgressBar({ job }) {
   return (
-    <div className="mt-4 card p-4">
+    <div className="mt-4 card p-4" role="status" aria-live="polite">
       <div className="mb-1 flex items-center justify-between text-sm">
         <span className="font-medium text-slate-700">
           {job.stage || "Processing"}…
@@ -224,11 +245,34 @@ function ProgressBar({ job }) {
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
         <div
+          role="progressbar"
+          aria-label={job.stage || "Processing interview"}
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={job.progress}
           className="h-full bg-blue-500 transition-all"
           style={{ width: `${job.progress}%` }}
         />
       </div>
     </div>
+  );
+}
+
+function WorkflowStatus({ interview, processing }) {
+  const steps = [
+    ["1", "Upload", true],
+    ["2", "Transcribe", Boolean(interview.transcript) && !processing],
+    ["3", "Review transcript", Boolean(interview.transcript?.reviewed_at)],
+    ["4", "Extract & sync", Boolean(interview.profile)],
+  ];
+  return (
+    <ol aria-label="Interview workflow" className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {steps.map(([number, label, complete]) => (
+        <li key={number} className={`rounded-lg border px-3 py-2 text-sm ${complete ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-500"}`}>
+          <span className="mr-1 font-semibold">{complete ? "✓" : number}.</span> {label}
+        </li>
+      ))}
+    </ol>
   );
 }
 

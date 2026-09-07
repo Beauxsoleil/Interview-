@@ -4,6 +4,7 @@ Interview Transcription & Applicant Profiling — local-first backend.
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -14,6 +15,7 @@ from interview_pipeline_core import runner
 
 from .config import settings
 from .database import init_db
+from .jobs import recover_interrupted_jobs
 from .models import InterviewStatus
 from .pipeline_runtime import pipeline_config
 from .routers import applicants, interviews, labels, sync
@@ -23,16 +25,41 @@ from .firestore_sync import firebase_configured
 # any other entrypoint alike (create_all is idempotent and cheap on SQLite).
 init_db()
 
-app = FastAPI(title="Interview Transcription & Applicant Profiling", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    recover_interrupted_jobs()
+    yield
 
-# Local-first: the frontend dev server runs on a different port. In production
-# you'd serve the built frontend from the same origin and tighten this.
+
+app = FastAPI(
+    title="Interview Transcription & Applicant Profiling",
+    version="0.2.0",
+    lifespan=lifespan,
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=list(settings.cors_allowed_origins),
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Accept", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
+    if not request.url.path.startswith(("/docs", "/redoc", "/openapi.json")):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; media-src 'self' blob:; connect-src 'self'"
+        )
+    if settings.enable_hsts:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 app.include_router(applicants.router)
@@ -52,7 +79,6 @@ def health() -> dict:
         "profile_extraction_enabled": bool(settings.gemini_api_key),
         "profile_model": settings.profile_model,
         "pibase_sync_enabled": firebase_configured(),
-        "firestore_project_id": settings.firestore_project_id,
     }
 
 
@@ -62,6 +88,8 @@ def meta() -> dict:
     return {
         "statuses": [s.value for s in InterviewStatus],
         "allowed_audio_extensions": list(settings.allowed_audio_extensions),
+        "max_upload_bytes": settings.max_upload_bytes,
+        "max_audio_duration_seconds": settings.max_audio_duration_seconds,
     }
 
 

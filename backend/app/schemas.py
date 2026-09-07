@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # --------------------------------------------------------------------------
 # Applicant profile schema
@@ -96,6 +96,9 @@ class TranscriptOut(BaseModel):
     segments: list[TranscriptSegment]
     speaker_labels: dict[str, str]
     applicant_speaker: str | None
+    revision: int
+    reviewed_at: datetime | None
+    edited_at: datetime | None
     created_at: datetime
 
     @classmethod
@@ -107,6 +110,9 @@ class TranscriptOut(BaseModel):
             segments=[TranscriptSegment(**s) for s in json.loads(t.segments_json)],
             speaker_labels=json.loads(t.speaker_labels_json),
             applicant_speaker=t.applicant_speaker,
+            revision=t.revision,
+            reviewed_at=t.reviewed_at,
+            edited_at=t.edited_at,
             created_at=t.created_at,
         )
 
@@ -116,6 +122,7 @@ class ProfileOut(BaseModel):
     data: ApplicantProfile
     model: str | None
     created_at: datetime
+    source_transcript_revision: int | None
 
     @classmethod
     def from_orm_profile(cls, p) -> "ProfileOut":
@@ -124,6 +131,7 @@ class ProfileOut(BaseModel):
             data=ApplicantProfile.model_validate(json.loads(p.data_json)),
             model=p.model,
             created_at=p.created_at,
+            source_transcript_revision=p.source_transcript_revision,
         )
 
 
@@ -158,6 +166,7 @@ class InterviewSummary(BaseModel):
 
 class InterviewDetail(InterviewSummary):
     audio_filename: str | None
+    audio_duration_seconds: float | None
     transcript: TranscriptOut | None
     profile: ProfileOut | None
 
@@ -181,3 +190,20 @@ class SpeakerLabelUpdate(BaseModel):
         if v is None:
             return v
         return {k: (val or "").strip() for k, val in v.items()}
+
+
+class TranscriptUpdate(BaseModel):
+    segments: list[TranscriptSegment] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_segments(self):
+        previous_start = -1.0
+        for segment in self.segments:
+            if segment.start < 0 or segment.end < segment.start:
+                raise ValueError("Transcript segment timestamps are invalid.")
+            if segment.start < previous_start:
+                raise ValueError("Transcript segments must be chronological.")
+            if not segment.speaker.strip() or not segment.text.strip():
+                raise ValueError("Every transcript segment needs a speaker and text.")
+            previous_start = segment.start
+        return self

@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -100,6 +101,7 @@ class Interview(Base):
 
     audio_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     audio_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    audio_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -139,6 +141,9 @@ class Transcript(Base):
     speaker_labels_json: Mapped[str] = mapped_column(Text, default="{}")
     # Which raw speaker id is the applicant (for profile extraction).
     applicant_speaker: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     interview: Mapped[Interview] = relationship(back_populates="transcript")
@@ -154,6 +159,7 @@ class Profile(Base):
     # Structured profile as JSON (schema in schemas.ApplicantProfile).
     data_json: Mapped[str] = mapped_column(Text, default="{}")
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_transcript_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     interview: Mapped[Interview] = relationship(back_populates="profile")
@@ -190,6 +196,7 @@ class SyncDraft(Base):
     )
     data_json: Mapped[str] = mapped_column(Text)
     model: Mapped[str] = mapped_column(String(64))
+    source_transcript_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
@@ -202,6 +209,7 @@ class SyncLog(Base):
     __tablename__ = "sync_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     interview_id: Mapped[int] = mapped_column(
         ForeignKey("interviews.id", ondelete="CASCADE"), index=True
     )

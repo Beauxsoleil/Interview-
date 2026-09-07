@@ -21,18 +21,26 @@ export default function InterviewListPage() {
   });
   const [uploadOpen, setUploadOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const pollRef = useRef(null);
+  const newButtonRef = useRef(null);
 
   const load = useCallback(async () => {
-    const data = await api.listInterviews(filters);
-    setInterviews(data);
-    setLoading(false);
+    try {
+      const data = await api.listInterviews(filters);
+      setInterviews(data);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, [filters]);
 
   useEffect(() => {
-    api.listApplicants().then(setApplicants).catch(() => {});
-    api.listLabels().then(setLabels).catch(() => {});
-    api.meta().then(setMeta).catch(() => {});
+    api.listApplicants().then(setApplicants).catch((err) => setError(err.message));
+    api.listLabels().then(setLabels).catch((err) => setError(err.message));
+    api.meta().then(setMeta).catch((err) => setError(err.message));
   }, []);
 
   // Keep the applicant filter in the URL (and react to link navigation).
@@ -42,7 +50,8 @@ export default function InterviewListPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    load();
+    const delay = setTimeout(load, filters.q ? 250 : 0);
+    return () => clearTimeout(delay);
   }, [load]);
 
   // Poll while any interview is still processing.
@@ -68,19 +77,22 @@ export default function InterviewListPage() {
     <div>
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Interviews</h1>
-        <button className="btn-primary" onClick={() => setUploadOpen(true)}>
+        <button ref={newButtonRef} className="btn-primary" onClick={() => setUploadOpen(true)}>
           + New interview
         </button>
       </div>
 
       <div className="card mb-4 flex flex-wrap items-center gap-3 p-3">
+        <label htmlFor="interview-search" className="sr-only">Search interviews</label>
         <input
+          id="interview-search"
           value={filters.q}
           onChange={(e) => setFilter("q", e.target.value)}
           placeholder="Search transcripts, profiles, applicants…"
           className="input max-w-xs flex-1"
         />
         <Select
+          label="Filter by applicant"
           value={filters.applicant_id}
           onChange={(v) => setFilter("applicant_id", v)}
           options={[
@@ -92,16 +104,19 @@ export default function InterviewListPage() {
           ]}
         />
         <Select
+          label="Filter by status"
           value={filters.status}
           onChange={(v) => setFilter("status", v)}
           options={[["", "All statuses"], ...meta.statuses.map((s) => [s, s])]}
         />
         <Select
+          label="Filter by label"
           value={filters.label_id}
           onChange={(v) => setFilter("label_id", v)}
           options={[["", "All labels"], ...labels.map((l) => [l.id, l.name])]}
         />
         <Select
+          label="Sort interviews"
           value={filters.sort}
           onChange={(v) => setFilter("sort", v)}
           options={[
@@ -117,10 +132,13 @@ export default function InterviewListPage() {
             setFilter("order", filters.order === "desc" ? "asc" : "desc")
           }
           title="Toggle sort direction"
+          aria-label={`Sort ${filters.order === "desc" ? "ascending" : "descending"}`}
         >
           {filters.order === "desc" ? "↓" : "↑"}
         </button>
       </div>
+
+      {error && <div role="alert" className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
@@ -168,8 +186,10 @@ export default function InterviewListPage() {
         onClose={() => setUploadOpen(false)}
         onCreated={() => {
           load();
-          api.listApplicants().then(setApplicants).catch(() => {});
+          api.listApplicants().then(setApplicants).catch((err) => setError(err.message));
         }}
+        meta={meta}
+        returnFocusRef={newButtonRef}
       />
     </div>
   );
@@ -183,10 +203,11 @@ function Dot({ label }) {
   );
 }
 
-function Select({ value, onChange, options }) {
+function Select({ label, value, onChange, options }) {
   return (
     <select
       value={value}
+      aria-label={label}
       onChange={(e) => onChange(e.target.value)}
       className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm outline-none focus:border-slate-500"
     >
