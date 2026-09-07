@@ -218,6 +218,9 @@ The project follows the intended incremental build order:
 - Long recordings are decoded to mono 16 kHz audio and transcribed sequentially
   in five-minute windows with eight seconds of context. Each window owns a
   non-overlapping portion of the timeline, preventing duplicate boundary text.
+- Whisper, WhisperX alignment, and Pyannote models are cached in the single
+  processing worker after their first use. Pipeline logs report diarization,
+  transcription, merge, total, and per-chunk elapsed times for tuning.
 - Application access is restricted at the network layer with Tailscale for a
   single operator. Do not open port 8000 publicly or treat an obscure URL as an
   authentication control.
