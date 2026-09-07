@@ -118,6 +118,9 @@ Edit `backend/.env`:
 | `HF_TOKEN` | HuggingFace token — required by pyannote to download the diarization model. |
 | `PIPELINE_BACKEND` | `auto` (default) uses ML if installed, else stub; `stub` forces the sample backend. |
 | `WHISPER_MODEL` | `tiny`…`large-v3` (default `base`). |
+| `TRANSCRIPTION_CHUNK_SECONDS` | Bounded transcription window size (default `300`, or five minutes). |
+| `TRANSCRIPTION_OVERLAP_SECONDS` | Context on each side of a window (default `8` seconds). |
+| `TRANSCRIPTION_BATCH_SIZE` | WhisperX VAD batch size (default `1` for variable-length safety). |
 | `DEFAULT_NUM_SPEAKERS` | Optional hint; leave blank to auto-detect. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Absolute path to the PIBASE Firebase service-account JSON. Never place it in this repository. |
 | `FIRESTORE_PROJECT_ID` | Required credential/project check; defaults to `pi-base-a3a09`. |
@@ -212,6 +215,9 @@ The project follows the intended incremental build order:
 
 - Job runner is a single-worker thread pool — fine for one machine; swap for a
   real queue (Celery/RQ) if you need horizontal scale.
+- Long recordings are decoded to mono 16 kHz audio and transcribed sequentially
+  in five-minute windows with eight seconds of context. Each window owns a
+  non-overlapping portion of the timeline, preventing duplicate boundary text.
 - Application access is restricted at the network layer with Tailscale for a
   single operator. Do not open port 8000 publicly or treat an obscure URL as an
   authentication control.
