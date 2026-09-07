@@ -101,6 +101,10 @@ export default function UploadModal({ open, onClose, onCreated }) {
               onChange={(e) => setFile(e.target.files?.[0] || null)}
               className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium hover:file:bg-slate-200"
             />
+            <p className="mt-1 text-xs text-slate-500">
+              Long recordings are processed automatically in smaller sections.
+              Maximum file size: 500 MB.
+            </p>
           </Field>
 
           {error && (
