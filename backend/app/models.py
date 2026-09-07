@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -48,6 +49,7 @@ class JobState(str, enum.Enum):
     RUNNING = "running"
     DONE = "done"
     ERROR = "error"
+    CANCELLED = "cancelled"
 
 
 interview_labels = Table(
@@ -102,6 +104,7 @@ class Interview(Base):
     audio_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     audio_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     audio_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delete_requested: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

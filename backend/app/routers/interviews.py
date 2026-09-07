@@ -24,7 +24,16 @@ from .. import jobs
 from ..audio_validation import AudioValidationError, validate_audio
 from ..config import settings
 from ..database import get_db
-from ..models import Applicant, Interview, Job, Label, SyncDraft, Transcript, utcnow
+from ..models import (
+    Applicant,
+    Interview,
+    Job,
+    JobState,
+    Label,
+    SyncDraft,
+    Transcript,
+    utcnow,
+)
 from ..pipeline.profile import ProfileExtractionError
 from ..schemas import (
     InterviewDetail,
@@ -172,7 +181,12 @@ def list_interviews(
     sort: str = "date",  # date|status|applicant|created
     order: str = "desc",  # asc|desc
 ):
-    query = db.query(Interview).options(*_QUERY_LOAD).join(Applicant)
+    query = (
+        db.query(Interview)
+        .options(*_QUERY_LOAD)
+        .join(Applicant)
+        .filter(Interview.delete_requested.is_(False))
+    )
 
     if status:
         query = query.filter(Interview.status == status)
@@ -240,6 +254,20 @@ def update_interview(
 @router.delete("/{interview_id}", status_code=204)
 def delete_interview(interview_id: int, db: Session = Depends(get_db)):
     interview = _get_or_404(db, interview_id)
+    active_jobs = [
+        job
+        for job in interview.jobs
+        if job.state in {JobState.QUEUED.value, JobState.RUNNING.value}
+    ]
+    if active_jobs:
+        interview.delete_requested = True
+        for job in active_jobs:
+            job.state = JobState.CANCELLED.value
+            job.stage = "cancellation requested"
+            job.error = None
+        db.commit()
+        return
+
     audio_path = Path(interview.audio_path) if interview.audio_path else None
     db.delete(interview)
     db.commit()

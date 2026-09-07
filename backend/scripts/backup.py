@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 import tarfile
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Allow the documented `python scripts/backup.py` invocation from backend/.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import settings
 
