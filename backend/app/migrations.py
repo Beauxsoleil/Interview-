@@ -12,6 +12,7 @@ MIGRATIONS = (
     (5, "profiles", "source_transcript_revision", "ALTER TABLE profiles ADD COLUMN source_transcript_revision INTEGER"),
     (6, "sync_drafts", "source_transcript_revision", "ALTER TABLE sync_drafts ADD COLUMN source_transcript_revision INTEGER"),
     (7, "sync_logs", "request_id", "ALTER TABLE sync_logs ADD COLUMN request_id VARCHAR(64)"),
+    (8, "interviews", "delete_requested", "ALTER TABLE interviews ADD COLUMN delete_requested BOOLEAN NOT NULL DEFAULT 0"),
 )
 
 

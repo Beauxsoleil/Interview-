@@ -247,6 +247,9 @@ The project follows the intended incremental build order:
 
 - Job runner is a single-worker, restart-recovering thread pool — appropriate
   for one machine; use a durable external queue before horizontal scaling.
+- Deleting an active interview requests cooperative cancellation. The file is
+  retained until the worker reaches the next safe stage/chunk boundary, then
+  removed before the next queued recording proceeds.
 - Long recordings are decoded to mono 16 kHz audio and transcribed sequentially
   in five-minute windows with eight seconds of context. Each window owns a
   non-overlapping portion of the timeline, preventing duplicate boundary text.

@@ -72,7 +72,10 @@ export default function InterviewDetailPage() {
   }
 
   async function remove() {
-    if (!confirm("Delete this interview and its audio, transcript, and profile?"))
+    const message = processing
+      ? "Cancel processing and delete this interview? The next queued recording will start at the next safe stopping point."
+      : "Delete this interview and its audio, transcript, and profile?";
+    if (!confirm(message))
       return;
     try {
       await api.deleteInterview(id);
@@ -180,7 +183,7 @@ export default function InterviewDetailPage() {
             className="rounded-md border border-rose-200 px-3.5 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50"
             onClick={remove}
           >
-            Delete
+            {processing ? "Cancel processing & delete" : "Delete"}
           </button>
         </div>
 

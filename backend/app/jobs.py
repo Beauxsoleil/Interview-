@@ -11,6 +11,7 @@ import json
 import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from interview_pipeline_core import runner
 from interview_pipeline_core.merge import render_text
@@ -24,6 +25,10 @@ logger = logging.getLogger("interview.jobs")
 
 # Transcription is CPU/GPU-bound; keep concurrency low to avoid oversubscription.
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pipeline")
+
+
+class JobCancelled(RuntimeError):
+    """Raised at safe boundaries after a reviewer cancels active processing."""
 
 
 def enqueue_transcription(interview_id: int) -> int:
@@ -58,7 +63,16 @@ def recover_interrupted_jobs() -> int:
     """Requeue the newest unfinished transcription for each interview on startup."""
     db = SessionLocal()
     recovered: list[int] = []
+    audio_to_remove: list[Path] = []
     try:
+        pending_deletes = (
+            db.query(Interview).filter(Interview.delete_requested.is_(True)).all()
+        )
+        for interview in pending_deletes:
+            if interview.audio_path:
+                audio_to_remove.append(Path(interview.audio_path))
+            db.delete(interview)
+
         active = (
             db.query(Job)
             .filter(
@@ -84,15 +98,48 @@ def recover_interrupted_jobs() -> int:
         db.commit()
     finally:
         db.close()
+    for audio_path in audio_to_remove:
+        _remove_audio(audio_path)
     for job_id in recovered:
         _executor.submit(_run_transcription_job, job_id)
     return len(recovered)
 
 
 def _update_job(db, job: Job, **fields) -> None:
-    for k, v in fields.items():
-        setattr(job, k, v)
-    db.add(job)
+    updated = (
+        db.query(Job)
+        .filter(Job.id == job.id, Job.state != JobState.CANCELLED.value)
+        .update(fields, synchronize_session=False)
+    )
+    if not updated:
+        db.rollback()
+        raise JobCancelled()
+    db.commit()
+
+
+def _remove_audio(audio_path: Path) -> None:
+    try:
+        audio_path.unlink(missing_ok=True)
+    except OSError:
+        logger.exception("Could not remove cancelled interview audio: %s", audio_path)
+
+
+def _finalize_cancelled_job(db, job_id: int) -> None:
+    db.expire_all()
+    job = db.get(Job, job_id)
+    if not job:
+        return
+    interview = db.get(Interview, job.interview_id)
+    if interview and interview.delete_requested:
+        audio_path = Path(interview.audio_path) if interview.audio_path else None
+        db.delete(interview)
+        db.commit()
+        if audio_path:
+            _remove_audio(audio_path)
+        return
+    job.state = JobState.CANCELLED.value
+    job.stage = "cancelled"
+    job.error = None
     db.commit()
 
 
@@ -117,6 +164,9 @@ def _run_transcription_job(job_id: int) -> None:
             config=pipeline_config(),
             on_progress=on_progress,
         )
+
+        # Catch cancellation after a long model call and before saving output.
+        _update_job(db, job, progress=96, stage="saving transcript")
 
         turns = result["turns"]
         speakers: list[str] = result["speakers"]
@@ -147,6 +197,10 @@ def _run_transcription_job(job_id: int) -> None:
         db.commit()
 
         _update_job(db, job, state=JobState.DONE.value, progress=100, stage="done")
+    except JobCancelled:
+        db.rollback()
+        logger.info("Job %s cancelled; releasing worker for the next recording", job_id)
+        _finalize_cancelled_job(db, job_id)
     except Exception as e:  # noqa: BLE001
         logger.error("Job %s failed: %s\n%s", job_id, e, traceback.format_exc())
         try:
