@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     hf_token: str | None = None
     # Optional hint; if None, diarization decides the number of speakers.
     default_num_speakers: int | None = None
+    transcription_chunk_seconds: int = 300
+    transcription_overlap_seconds: int = 8
+    transcription_batch_size: int = 1
 
     @field_validator(
         "gemini_api_key",
