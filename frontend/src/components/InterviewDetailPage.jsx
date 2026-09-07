@@ -198,7 +198,7 @@ export default function InterviewDetailPage() {
             {iv.transcript && !processing && (
               <>
                 <br />
-                Use “Extract profile” above (requires a Gemini API key).
+                Use “Extract profile” above to summarize this interview.
               </>
             )}
           </div>
