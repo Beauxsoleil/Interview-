@@ -6,6 +6,7 @@ from interview_pipeline_core import PipelineConfig, run_pipeline, using_stub
 from interview_pipeline_core.merge import DiarSegment, TextUnit, merge, render_text
 from interview_pipeline_core.transcription import (
     AudioWindow,
+    _chunked_transcribe,
     _owned_units,
     audio_windows,
 )
@@ -77,6 +78,36 @@ class PipelineTests(unittest.TestCase):
                 transcription_chunk_seconds=10,
                 transcription_overlap_seconds=5,
             )
+
+    def test_chunk_progress_reports_each_completed_window(self) -> None:
+        config = PipelineConfig(
+            transcription_chunk_seconds=10,
+            transcription_overlap_seconds=2,
+        )
+        progress: list[tuple[int, int]] = []
+
+        def fake_transcribe(_chunk):
+            return {"language": "en", "units": []}
+
+        result = _chunked_transcribe(
+            [0] * 25,
+            sample_rate=1,
+            config=config,
+            transcribe=fake_transcribe,
+            on_chunk_progress=lambda completed, total: progress.append(
+                (completed, total)
+            ),
+        )
+
+        self.assertEqual(result, {"language": "en", "units": []})
+        self.assertEqual(progress, [(1, 3), (2, 3), (3, 3)])
+
+    def test_pipeline_returns_stage_timings(self) -> None:
+        result = run_pipeline("unused.wav", PipelineConfig(backend="stub"))
+        self.assertIn("stub", result["timings"])
+        self.assertIn("merge", result["timings"])
+        self.assertIn("total", result["timings"])
+        self.assertGreaterEqual(result["timings"]["total"], 0)
 
 
 if __name__ == "__main__":
