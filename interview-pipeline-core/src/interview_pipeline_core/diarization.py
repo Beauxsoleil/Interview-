@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
+from functools import lru_cache
 
 from .config import PipelineConfig
 from .merge import DiarSegment
+
+logger = logging.getLogger("interview.pipeline.diarization")
 
 
 def pyannote_available() -> bool:
@@ -15,24 +19,28 @@ def pyannote_available() -> bool:
         return False
 
 
-def diarize_pyannote(audio_path: str, config: PipelineConfig) -> list[DiarSegment]:
+@lru_cache(maxsize=2)
+def _load_pipeline(hf_token: str, use_cuda: bool):
     from pyannote.audio import Pipeline  # type: ignore
 
+    logger.info("Loading Pyannote diarization model (cuda=%s)", use_cuda)
+    pipeline = Pipeline.from_pretrained(
+        "pyannote/speaker-diarization-3.1", use_auth_token=hf_token
+    )
+    if use_cuda:
+        import torch  # type: ignore
+
+        pipeline.to(torch.device("cuda"))
+    return pipeline
+
+
+def diarize_pyannote(audio_path: str, config: PipelineConfig) -> list[DiarSegment]:
     if not config.hf_token:
         raise RuntimeError(
             "Diarization requires HF_TOKEN for pyannote/speaker-diarization-3.1."
         )
 
-    pipeline = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1", use_auth_token=config.hf_token
-    )
-    try:
-        import torch  # type: ignore
-
-        if torch.cuda.is_available():
-            pipeline.to(torch.device("cuda"))
-    except Exception:
-        pass
+    pipeline = _load_pipeline(config.hf_token, _cuda_available())
 
     kwargs = {}
     if config.default_num_speakers:
@@ -46,3 +54,11 @@ def diarize_pyannote(audio_path: str, config: PipelineConfig) -> list[DiarSegmen
     segments.sort(key=lambda segment: segment.start)
     return segments
 
+
+def _cuda_available() -> bool:
+    try:
+        import torch  # type: ignore
+
+        return torch.cuda.is_available()
+    except Exception:
+        return False
