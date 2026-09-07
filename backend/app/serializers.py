@@ -40,6 +40,7 @@ def interview_detail(interview: Interview) -> InterviewDetail:
     return InterviewDetail(
         **base,
         audio_filename=interview.audio_filename,
+        audio_duration_seconds=interview.audio_duration_seconds,
         transcript=TranscriptOut.from_orm_transcript(interview.transcript)
         if interview.transcript
         else None,

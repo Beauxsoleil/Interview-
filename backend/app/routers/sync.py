@@ -12,6 +12,7 @@ from ..firestore_sync import (
     ArchivedApplicantError,
     FirestoreConfigurationError,
     FirestoreGateway,
+    SyncConflictError,
     get_firestore_gateway,
 )
 from ..models import Interview, SyncDraft, SyncLog
@@ -51,6 +52,14 @@ def _draft(db: Session, interview_id: int) -> FirestoreSyncExtraction:
     draft = db.query(SyncDraft).filter_by(interview_id=interview_id).first()
     if not draft:
         raise HTTPException(409, "Run sync extraction before proposing a write.")
+    interview = _interview(db, interview_id)
+    if (
+        not interview.transcript
+        or draft.source_transcript_revision != interview.transcript.revision
+    ):
+        raise HTTPException(
+            409, "The transcript changed after extraction. Run sync extraction again."
+        )
     return FirestoreSyncExtraction.model_validate_json(draft.data_json)
 
 
@@ -83,6 +92,10 @@ def extract(interview_id: int, db: Session = Depends(get_db)):
     if not interview.transcript:
         raise HTTPException(400, "Interview has no transcript.")
     transcript = interview.transcript
+    if not transcript.reviewed_at:
+        raise HTTPException(
+            409, "Review the transcript and applicant speaker before PIBASE extraction."
+        )
     labels = json.loads(transcript.speaker_labels_json or "{}")
     applicant = transcript.applicant_speaker or "the applicant"
     try:
@@ -103,6 +116,7 @@ def extract(interview_id: int, db: Session = Depends(get_db)):
         draft = SyncDraft(interview_id=interview_id, data_json="{}", model=model)
     draft.data_json = extraction.model_dump_json()
     draft.model = model
+    draft.source_transcript_revision = transcript.revision
     db.add(draft)
     db.commit()
     return SyncExtractOut(extraction=extraction, model=model)
@@ -177,6 +191,19 @@ def confirm(
     gateway: FirestoreGateway = Depends(_gateway),
 ):
     interview = _interview(db, interview_id)
+    existing_log = (
+        db.query(SyncLog)
+        .filter_by(interview_id=interview.id, request_id=payload.request_id)
+        .first()
+    )
+    if existing_log:
+        return SyncConfirmOut(
+            applicant_id=existing_log.firestore_applicant_id,
+            note_id=existing_log.note_id,
+            fields_written=json.loads(existing_log.fields_written_json),
+            unarchived=False,
+            log=_log_out(existing_log),
+        )
     extraction = _draft(db, interview.id)
     target = _target(payload, gateway)
     if target and target.archived and not payload.unarchive:
@@ -205,14 +232,19 @@ def confirm(
             interview_id=interview.id,
             approved_by=payload.approved_by.strip(),
             unarchive=payload.unarchive,
+            request_id=payload.request_id,
+            expected_values=payload.expected_values,
         )
     except ArchivedApplicantError as error:
+        raise HTTPException(409, str(error)) from error
+    except SyncConflictError as error:
         raise HTTPException(409, str(error)) from error
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
 
     fields_written = list(approved_values)
     log = SyncLog(
+        request_id=payload.request_id,
         interview_id=interview.id,
         firestore_applicant_id=applicant_id,
         note_id=note_id,

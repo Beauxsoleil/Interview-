@@ -2,8 +2,8 @@
 
 All settings are local-only by default. This app stores health, legal, and
 demographic information, so nothing is sent to third-party analytics and audio
-lives on local disk. The only outbound LLM call is to the Gemini API for profile
-extraction, and that only happens if an API key is configured.
+lives on local disk. The only outbound LLM call is a reviewer-triggered Gemini
+profile extraction, and that only works if an API key is configured.
 """
 from __future__ import annotations
 
@@ -25,7 +25,18 @@ class Settings(BaseSettings):
 
     # Audio uploads
     allowed_audio_extensions: tuple[str, ...] = (".mp3", ".wav", ".m4a")
-    max_upload_bytes: int = 500 * 1024 * 1024  # 500 MB
+    max_upload_bytes: int = 500 * 1024 * 1024  # 500 MiB
+    max_audio_duration_seconds: int = 2 * 60 * 60
+    min_free_disk_bytes: int = 1024 * 1024 * 1024
+    ffprobe_timeout_seconds: int = 30
+    cors_allowed_origins: tuple[str, ...] = (
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    )
+    enable_hsts: bool = False
+
+    # Backups
+    backup_retention_count: int = 14
 
     # --- Gemini (profile extraction) ---
     gemini_api_key: str | None = None
@@ -66,9 +77,14 @@ class Settings(BaseSettings):
     def audio_dir(self) -> Path:
         return self.data_dir / "audio"
 
+    @property
+    def backup_dir(self) -> Path:
+        return self.data_dir / "backups"
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.audio_dir.mkdir(parents=True, exist_ok=True)
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()

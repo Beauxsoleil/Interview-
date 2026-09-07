@@ -20,8 +20,9 @@ human-reviewed updates to the APPLEMDT/PIBASE applicant tracker.
 3. **Transcribe** with Whisper (or `whisperx` for word-level timestamps and
    better speaker/text alignment).
 4. **Merge** into a labeled transcript (`Speaker 1: …`, `Speaker 2: …`).
-5. **Rename** speakers after the fact (e.g. → *Interviewer* / *Applicant*).
-6. **Extract** a structured applicant profile with the Gemini API — into a JSON
+5. **Correct and review** the transcript, rename speakers, and explicitly mark
+   which speaker is the applicant.
+6. **Extract** a structured applicant profile from the reviewed revision with the Gemini API — into a JSON
    schema first, then rendered as a readable summary card. Fields the transcript
    doesn't cover are flagged *"not mentioned"* rather than guessed.
 7. **Organize** interviews by applicant, status, and custom labels, with a
@@ -80,6 +81,10 @@ Priority / Approved / Rejected) and any number of custom labels.
 
 ### 1. Backend
 
+Install FFmpeg (including `ffprobe`) with your operating system package manager;
+uploads are content-validated with it before any applicant or interview row is
+created.
+
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
@@ -122,6 +127,10 @@ Edit `backend/.env`:
 | `TRANSCRIPTION_OVERLAP_SECONDS` | Context on each side of a window (default `8` seconds). |
 | `TRANSCRIPTION_BATCH_SIZE` | WhisperX VAD batch size (default `1` for variable-length safety). |
 | `DEFAULT_NUM_SPEAKERS` | Optional hint; leave blank to auto-detect. |
+| `MAX_UPLOAD_BYTES` | Maximum upload size; defaults to 500 MiB. |
+| `MAX_AUDIO_DURATION_SECONDS` | Maximum validated recording duration; defaults to two hours. |
+| `MIN_FREE_DISK_BYTES` | Refuse new uploads when available disk falls below this reserve. |
+| `CORS_ALLOWED_ORIGINS` | Explicit browser origins allowed to call the API in development. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Absolute path to the PIBASE Firebase service-account JSON. Never place it in this repository. |
 | `FIRESTORE_PROJECT_ID` | Required credential/project check; defaults to `pi-base-a3a09`. |
 
@@ -155,6 +164,14 @@ The recruiter workflow is deliberately two-stage:
 Archived applicants cannot be synchronized accidentally. The UI requires an
 explicit unarchive choice and clears PIBASE's modern and legacy archive metadata.
 Each confirmed operation is recorded in the local `sync_logs` SQLite table.
+PIBASE confirmation also carries an idempotency key and verifies that every
+approved remote value still matches what the reviewer saw; changed records are
+rejected for a fresh review instead of being silently overwritten.
+
+Profile and PIBASE extraction are blocked until a reviewer explicitly marks the
+current transcript revision reviewed. Correcting text, changing speakers, or
+re-running transcription invalidates that approval and deletes stale extraction
+drafts so an older AI result cannot be synchronized.
 
 ### Production on Oracle + Tailscale
 
@@ -172,6 +189,19 @@ with `npm run build`, restart the service, and verify `/api/health` through
 Tailscale. The `pibase_sync_enabled` health field is true only when the configured
 credential is a valid Firebase service-account JSON file for the expected
 Firestore project.
+
+Back up the local database and audio on a schedule owned by the service user:
+
+```bash
+cd /home/ubuntu/Interview-/backend
+.venv/bin/python scripts/backup.py
+```
+
+The command uses SQLite's online backup API, creates a mode-`0600` compressed
+snapshot under `backend/data/backups`, and retains the newest 14 archives by
+default. Copy those archives to an encrypted, access-controlled location and
+test restoration before launch; a backup remaining on the same VM is not a
+disaster-recovery copy.
 
 ---
 
@@ -199,6 +229,8 @@ The project follows the intended incremental build order:
 | `GET` | `/api/interviews/{id}` | Full detail (transcript + profile + latest job) |
 | `PATCH` | `/api/interviews/{id}` | Update title / status / date / labels |
 | `PATCH` | `/api/interviews/{id}/speakers` | Rename speakers, mark the applicant |
+| `PATCH` | `/api/interviews/{id}/transcript` | Save reviewed transcript corrections and create a new revision |
+| `POST` | `/api/interviews/{id}/transcript/review` | Mark the current transcript revision reviewed |
 | `POST` | `/api/interviews/{id}/reprocess` | Re-run transcription |
 | `POST` | `/api/interviews/{id}/extract-profile` | (Re)extract the profile |
 | `GET` | `/api/interviews/{id}/audio` | Stream the stored audio |
@@ -213,8 +245,8 @@ The project follows the intended incremental build order:
 
 ## Notes & limitations (v1)
 
-- Job runner is a single-worker thread pool — fine for one machine; swap for a
-  real queue (Celery/RQ) if you need horizontal scale.
+- Job runner is a single-worker, restart-recovering thread pool — appropriate
+  for one machine; use a durable external queue before horizontal scaling.
 - Long recordings are decoded to mono 16 kHz audio and transcribed sequentially
   in five-minute windows with eight seconds of context. Each window owns a
   non-overlapping portion of the timeline, preventing duplicate boundary text.

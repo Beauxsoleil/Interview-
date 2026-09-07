@@ -15,9 +15,8 @@ from concurrent.futures import ThreadPoolExecutor
 from interview_pipeline_core import runner
 from interview_pipeline_core.merge import render_text
 
-from .config import settings
 from .database import SessionLocal
-from .models import Interview, Job, JobState, Profile, Transcript
+from .models import Interview, Job, JobState, Profile, SyncDraft, Transcript
 from .pipeline import profile as profile_pipeline
 from .pipeline_runtime import pipeline_config
 
@@ -28,9 +27,21 @@ _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pipeline")
 
 
 def enqueue_transcription(interview_id: int) -> int:
-    """Create a queued Job row and schedule it. Returns the job id."""
+    """Create one queued job per interview, avoiding duplicate work."""
     db = SessionLocal()
     try:
+        active = (
+            db.query(Job)
+            .filter(
+                Job.interview_id == interview_id,
+                Job.kind == "transcribe",
+                Job.state.in_([JobState.QUEUED.value, JobState.RUNNING.value]),
+            )
+            .order_by(Job.created_at.desc())
+            .first()
+        )
+        if active:
+            return active.id
         job = Job(interview_id=interview_id, kind="transcribe", state=JobState.QUEUED.value)
         db.add(job)
         db.commit()
@@ -41,6 +52,41 @@ def enqueue_transcription(interview_id: int) -> int:
 
     _executor.submit(_run_transcription_job, job_id)
     return job_id
+
+
+def recover_interrupted_jobs() -> int:
+    """Requeue the newest unfinished transcription for each interview on startup."""
+    db = SessionLocal()
+    recovered: list[int] = []
+    try:
+        active = (
+            db.query(Job)
+            .filter(
+                Job.kind == "transcribe",
+                Job.state.in_([JobState.QUEUED.value, JobState.RUNNING.value]),
+            )
+            .order_by(Job.interview_id, Job.created_at.desc())
+            .all()
+        )
+        seen: set[int] = set()
+        for job in active:
+            if job.interview_id in seen:
+                job.state = JobState.ERROR.value
+                job.stage = "superseded"
+                job.error = "Superseded by a newer processing job."
+                continue
+            seen.add(job.interview_id)
+            job.state = JobState.QUEUED.value
+            job.stage = "recovered after restart"
+            job.progress = 0
+            job.error = None
+            recovered.append(job.id)
+        db.commit()
+    finally:
+        db.close()
+    for job_id in recovered:
+        _executor.submit(_run_transcription_job, job_id)
+    return len(recovered)
 
 
 def _update_job(db, job: Job, **fields) -> None:
@@ -81,25 +127,24 @@ def _run_transcription_job(job_id: int) -> None:
             speakers[0] if speakers else None
         )
 
-        # Upsert transcript.
+        # Upsert transcript and invalidate every output derived from an older
+        # revision. A reviewer must explicitly approve the new transcript.
         transcript = interview.transcript or Transcript(interview_id=interview.id)
         transcript.language = result.get("language")
         transcript.segments_json = json.dumps(turns)
         transcript.text = render_text(turns)
         transcript.speaker_labels_json = json.dumps({})
         transcript.applicant_speaker = applicant_speaker
+        transcript.revision = (transcript.revision or 0) + 1
+        transcript.reviewed_at = None
+        transcript.edited_at = None
+        if interview.profile:
+            db.delete(interview.profile)
+        draft = db.query(SyncDraft).filter_by(interview_id=interview.id).first()
+        if draft:
+            db.delete(draft)
         db.add(transcript)
         db.commit()
-
-        _update_job(db, job, progress=97, stage="extracting profile")
-
-        # Auto-run profile extraction if configured. A failure here does not
-        # fail the transcription job — the transcript is still valuable.
-        if settings.gemini_api_key:
-            try:
-                _extract_and_save_profile(db, interview.id)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("Profile extraction failed for %s: %s", interview.id, e)
 
         _update_job(db, job, state=JobState.DONE.value, progress=100, stage="done")
     except Exception as e:  # noqa: BLE001
@@ -108,7 +153,11 @@ def _run_transcription_job(job_id: int) -> None:
             job = db.get(Job, job_id)
             if job:
                 _update_job(
-                    db, job, state=JobState.ERROR.value, error=str(e), stage="error"
+                    db,
+                    job,
+                    state=JobState.ERROR.value,
+                    error="Processing failed. Review server logs, then retry.",
+                    stage="error",
                 )
         except Exception:
             pass
@@ -122,6 +171,8 @@ def _extract_and_save_profile(db, interview_id: int) -> Profile:
         raise ValueError("Interview has no transcript to profile.")
 
     transcript = interview.transcript
+    if not transcript.reviewed_at:
+        raise ValueError("Transcript must be reviewed before profile extraction.")
     labels = json.loads(transcript.speaker_labels_json or "{}")
     applicant = transcript.applicant_speaker or "the applicant"
     applicant_role = labels.get(applicant, applicant)
@@ -133,6 +184,7 @@ def _extract_and_save_profile(db, interview_id: int) -> Profile:
     profile = interview.profile or Profile(interview_id=interview.id)
     profile.data_json = profile_data.model_dump_json()
     profile.model = model
+    profile.source_transcript_revision = transcript.revision
     db.add(profile)
     db.commit()
     db.refresh(profile)

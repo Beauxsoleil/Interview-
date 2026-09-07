@@ -18,6 +18,10 @@ class ArchivedApplicantError(RuntimeError):
     pass
 
 
+class SyncConflictError(RuntimeError):
+    pass
+
+
 def firebase_configured() -> bool:
     path = settings.google_application_credentials
     if not path or not Path(path).is_file():
@@ -84,13 +88,15 @@ class FirestoreGateway:
         interview_id: int,
         approved_by: str,
         unarchive: bool,
+        request_id: str | None = None,
+        expected_values: dict | None = None,
     ) -> tuple[str, str, bool]:
         applicant_ref = (
             self.applicants.document(applicant_id)
             if applicant_id
             else self.applicants.document()
         )
-        note_ref = applicant_ref.collection("notes").document()
+        note_ref = applicant_ref.collection("notes").document(request_id)
         transaction = self.client.transaction()
 
         @self.firestore.transactional
@@ -135,6 +141,11 @@ class FirestoreGateway:
                         "This applicant is archived; explicitly unarchive before syncing."
                     )
                 merged = dict(existing)
+                for field, expected in (expected_values or {}).items():
+                    if existing.get(field) != expected:
+                        raise SyncConflictError(
+                            f"PIBASE field '{field}' changed after review. Refresh the proposal."
+                        )
 
             merged.update(approved_values)
             merged["flagNeedsReview"] = bool(

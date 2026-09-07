@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -115,6 +116,8 @@ class SyncConfirmRequest(SyncProposalRequest):
     approved_fields: list[str] = Field(default_factory=list)
     approved_by: str = Field(min_length=1, max_length=255)
     unarchive: bool = False
+    request_id: str = Field(default_factory=lambda: str(uuid4()), min_length=8, max_length=64)
+    expected_values: dict[str, str | int | None] = Field(default_factory=dict)
 
     @field_validator("approved_fields")
     @classmethod
@@ -123,6 +126,14 @@ class SyncConfirmRequest(SyncProposalRequest):
         if unknown:
             raise ValueError(f"Unsupported sync fields: {', '.join(sorted(unknown))}")
         return list(dict.fromkeys(fields))
+
+    @field_validator("expected_values")
+    @classmethod
+    def only_known_expected_fields(cls, values: dict) -> dict:
+        unknown = set(values) - set(FIRESTORE_SYNC_FIELDS)
+        if unknown:
+            raise ValueError(f"Unsupported expected fields: {', '.join(sorted(unknown))}")
+        return values
 
 
 class SyncLogOut(BaseModel):
