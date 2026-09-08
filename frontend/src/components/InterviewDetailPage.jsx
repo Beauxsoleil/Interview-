@@ -1,7 +1,7 @@
 import { Component, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
-import { LabelChip, StatusBadge, formatDate } from "../lib/ui.jsx";
+import { LabelChip, StatusBadge, formatDate, formatTime } from "../lib/ui.jsx";
 import ProfileCard from "./ProfileCard.jsx";
 import PibaseSyncPanel from "./PibaseSyncPanel.jsx";
 import TranscriptView from "./TranscriptView.jsx";
@@ -72,9 +72,11 @@ export default function InterviewDetailPage() {
   }
 
   async function remove() {
-    const message = processing
-      ? "Cancel processing and delete this interview? The next queued recording will start at the next safe stopping point."
-      : "Delete this interview and its audio, transcript, and profile?";
+    const message = iv.is_combined
+      ? "Delete this combined interview? Its original recordings will be restored to the interview list."
+      : processing
+        ? "Cancel processing and delete this interview? The next queued recording will start at the next safe stopping point."
+        : "Delete this interview and its audio, transcript, and profile?";
     if (!confirm(message))
       return;
     try {
@@ -102,7 +104,11 @@ export default function InterviewDetailPage() {
             <p className="mt-1 text-sm text-slate-500">
               {iv.title ? `${iv.title} · ` : ""}
               {formatDate(iv.interview_date)}
-              {iv.audio_filename ? ` · ${iv.audio_filename}` : ""}
+              {iv.is_combined
+                ? ` · ${iv.part_count} recording parts`
+                : iv.audio_filename
+                  ? ` · ${iv.audio_filename}`
+                  : ""}
               {" · "}
               <Link
                 to={`/?applicant_id=${iv.applicant_id}`}
@@ -157,16 +163,18 @@ export default function InterviewDetailPage() {
 
         {/* Actions */}
         <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+          {!iv.is_combined && (
+            <button
+              className="btn-ghost"
+              disabled={busy || processing}
+              onClick={() => action(() => api.reprocess(id))}
+            >
+              Re-run transcription
+            </button>
+          )}
           <button
             className="btn-ghost"
-            disabled={busy || processing}
-            onClick={() => action(() => api.reprocess(id))}
-          >
-            Re-run transcription
-          </button>
-          <button
-            className="btn-ghost"
-            disabled={busy || processing || !reviewed}
+            disabled={busy || processing || !reviewed || iv.combined_needs_rebuild}
             onClick={() => action(() => api.extractProfile(id))}
             title={
               !iv.transcript
@@ -193,6 +201,22 @@ export default function InterviewDetailPage() {
           </div>
         )}
       </div>
+
+      {iv.combined_needs_rebuild && (
+        <div role="alert" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <h2 className="font-semibold">A source recording changed</h2>
+          <p className="mt-1">
+            Rebuild the combined transcript to include the latest corrections. You will need to review it again afterward.
+          </p>
+          <button
+            className="btn-ghost mt-3 border-amber-300 bg-white"
+            disabled={busy}
+            onClick={() => action(() => api.rebuildCombined(id))}
+          >
+            {busy ? "Rebuilding…" : "Rebuild combined transcript"}
+          </button>
+        </div>
+      )}
 
       <WorkflowStatus interview={iv} processing={processing} />
 
@@ -229,6 +253,32 @@ export default function InterviewDetailPage() {
           </div>
         )}
       </div>
+
+      {iv.is_combined && iv.parts.length > 0 && (
+        <details className="card mt-4 p-5">
+          <summary className="cursor-pointer font-semibold">Original recording parts ({iv.parts.length})</summary>
+          <p className="mt-2 text-sm text-slate-500">
+            Originals are preserved. Open a part to correct its transcript; this combined interview will then ask to be rebuilt.
+          </p>
+          <ol className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
+            {iv.parts.map((part) => (
+              <li key={part.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                <span className="font-semibold text-slate-500">Part {part.position}</span>
+                <span className="min-w-0 flex-1 truncate">{part.audio_filename || `Recording ${part.id}`}</span>
+                {part.audio_duration_seconds != null && (
+                  <span className="text-slate-500">{formatTime(part.audio_duration_seconds)}</span>
+                )}
+                <span className={part.transcript_reviewed ? "text-emerald-700" : "text-amber-700"}>
+                  {part.transcript_reviewed ? "Reviewed" : "Review required"}
+                </span>
+                <Link className="font-medium text-blue-700 hover:text-blue-900" to={`/interviews/${part.id}`}>
+                  Open part
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
 
       {iv.transcript && !processing && reviewed && (
         <PanelErrorBoundary key={`${iv.id}-${iv.transcript.revision}`}>
@@ -295,7 +345,7 @@ function ProgressBar({ job }) {
 
 function WorkflowStatus({ interview, processing }) {
   const steps = [
-    ["1", "Upload", true],
+    ["1", interview.is_combined ? "Recordings" : "Upload", true],
     ["2", "Transcribe", Boolean(interview.transcript) && !processing],
     ["3", "Review transcript", Boolean(interview.transcript?.reviewed_at)],
     ["4", "Extract & sync", Boolean(interview.profile)],

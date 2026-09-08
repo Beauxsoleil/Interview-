@@ -1,10 +1,18 @@
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api.js";
 import { formatTime } from "../lib/ui.jsx";
 
 export default function TranscriptView({ interview, onUpdated }) {
   const transcript = interview.transcript;
   const audioRef = useRef(null);
+  const pendingSeekRef = useRef(null);
+  const parts = useMemo(
+    () => interview.parts?.length
+      ? interview.parts
+      : [{ id: interview.id, position: 1, audio_filename: interview.audio_filename }],
+    [interview.id, interview.audio_filename, interview.parts],
+  );
+  const [activePartId, setActivePartId] = useState(parts[0].id);
   const [currentTime, setCurrentTime] = useState(0);
   const [editingSpeakers, setEditingSpeakers] = useState(false);
   const [editingText, setEditingText] = useState(false);
@@ -22,16 +30,53 @@ export default function TranscriptView({ interview, onUpdated }) {
 
   const labelFor = (raw) => transcript.speaker_labels?.[raw] || raw;
 
-  function seek(t) {
+  useEffect(() => {
+    setDraftSegments(transcript.segments);
+  }, [transcript.revision, transcript.segments]);
+
+  useEffect(() => {
+    setActivePartId(parts[0].id);
+    setCurrentTime(0);
+  }, [interview.id, parts[0].id]);
+
+  function seek(segment) {
+    const sourceId = segment.source_interview_id || interview.id;
+    const localTime = segment.source_start ?? segment.start;
+    if (sourceId !== activePartId) {
+      pendingSeekRef.current = localTime;
+      setActivePartId(sourceId);
+      return;
+    }
     if (audioRef.current) {
-      audioRef.current.currentTime = t;
+      audioRef.current.currentTime = localTime;
       audioRef.current.play().catch(() => {});
     }
   }
 
+  const activePartIndex = Math.max(0, parts.findIndex((part) => part.id === activePartId));
   const activeIdx = transcript.segments.findIndex(
-    (s) => currentTime >= s.start && currentTime < s.end,
+    (segment) => {
+      const sourceId = segment.source_interview_id || interview.id;
+      const localStart = segment.source_start ?? segment.start;
+      const localEnd = segment.source_end ?? segment.end;
+      return sourceId === activePartId && currentTime >= localStart && currentTime < localEnd;
+    },
   );
+
+  function audioReady(event) {
+    if (pendingSeekRef.current != null) {
+      event.currentTarget.currentTime = pendingSeekRef.current;
+      pendingSeekRef.current = null;
+      event.currentTarget.play().catch(() => {});
+    }
+  }
+
+  function playNextPart() {
+    const next = parts[activePartIndex + 1];
+    if (!next) return;
+    pendingSeekRef.current = 0;
+    setActivePartId(next.id);
+  }
 
   async function saveTranscript() {
     setBusy(true); setError(null);
@@ -84,11 +129,36 @@ export default function TranscriptView({ interview, onUpdated }) {
       </div>
 
       <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+        {parts.length > 1 && (
+          <div className="mb-3">
+            <p className="mb-2 text-xs font-medium text-slate-500">
+              Recording {activePartIndex + 1} of {parts.length}
+            </p>
+            <div className="flex flex-wrap gap-2" aria-label="Recording parts">
+              {parts.map((part, index) => (
+                <button
+                  key={part.id}
+                  type="button"
+                  aria-pressed={part.id === activePartId}
+                  className={part.id === activePartId ? "btn-primary !py-1.5 text-xs" : "btn-ghost !py-1.5 text-xs"}
+                  onClick={() => {
+                    pendingSeekRef.current = 0;
+                    setActivePartId(part.id);
+                  }}
+                >
+                  Part {index + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <audio
           ref={audioRef}
-          src={api.audioUrl(interview.id)}
+          src={api.audioUrl(activePartId)}
           controls
           onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
+          onLoadedMetadata={audioReady}
+          onEnded={playNextPart}
           className="w-full"
         />
       </div>
@@ -111,15 +181,23 @@ export default function TranscriptView({ interview, onUpdated }) {
       <div className="max-h-[520px] space-y-1 overflow-y-auto p-3">
         {(editingText ? draftSegments : transcript.segments).map((seg, i) => {
           const isApplicant = seg.speaker === transcript.applicant_speaker;
+          const previous = i > 0 ? (editingText ? draftSegments : transcript.segments)[i - 1] : null;
+          const beginsPart = parts.length > 1 && seg.part_number !== previous?.part_number;
+          const localStart = seg.source_start ?? seg.start;
           return (
-            editingText ? (
+            <Fragment key={`${seg.source_interview_id || interview.id}-${i}`}>
+            {beginsPart && (
+              <div className="px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Part {seg.part_number || 1}
+              </div>
+            )}
+            {editingText ? (
               <div key={i} className="rounded-lg border border-slate-200 p-3">
-                <div className="mb-1 text-xs font-semibold text-slate-500">{labelFor(seg.speaker)} · {formatTime(seg.start)}</div>
-                <textarea aria-label={`Transcript text at ${formatTime(seg.start)}`} rows={3} className="input resize-y" value={seg.text} onChange={(event) => setDraftSegments((items) => items.map((item, index) => index === i ? { ...item, text: event.target.value } : item))} />
+                <div className="mb-1 text-xs font-semibold text-slate-500">{labelFor(seg.speaker)} · {formatTime(localStart)}</div>
+                <textarea aria-label={`Transcript text at ${formatTime(localStart)}`} rows={3} className="input resize-y" value={seg.text} onChange={(event) => setDraftSegments((items) => items.map((item, index) => index === i ? { ...item, text: event.target.value } : item))} />
               </div>
             ) : <button
-              key={i}
-              onClick={() => seek(seg.start)}
+              onClick={() => seek(seg)}
               className={`block w-full rounded-lg px-3 py-2 text-left transition ${
                 i === activeIdx ? "bg-amber-50 ring-1 ring-amber-200" : "hover:bg-slate-50"
               }`}
@@ -134,11 +212,12 @@ export default function TranscriptView({ interview, onUpdated }) {
                   {isApplicant && " · applicant"}
                 </span>
                 <span className="text-[11px] text-slate-400">
-                  {formatTime(seg.start)}
+                  {formatTime(localStart)}
                 </span>
               </div>
               <p className="text-sm leading-relaxed text-slate-800">{seg.text}</p>
-            </button>
+            </button>}
+            </Fragment>
           );
         })}
       </div>

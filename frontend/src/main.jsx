@@ -5,6 +5,7 @@ import "./index.css";
 import App from "./App.jsx";
 import InterviewListPage from "./components/InterviewListPage.jsx";
 import InterviewDetailPage from "./components/InterviewDetailPage.jsx";
+import CombineInterviewsPage from "./components/CombineInterviewsPage.jsx";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
@@ -12,6 +13,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<InterviewListPage />} />
+          <Route path="combine" element={<CombineInterviewsPage />} />
           <Route path="interviews/:id" element={<InterviewDetailPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

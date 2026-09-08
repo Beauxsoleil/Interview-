@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -9,6 +12,7 @@ from ..models import Applicant, Interview
 from ..schemas import ApplicantCreate, ApplicantOut
 
 router = APIRouter(prefix="/api/applicants", tags=["applicants"])
+logger = logging.getLogger("interview.applicants")
 
 
 def _to_out(db: Session, a: Applicant) -> ApplicantOut:
@@ -57,5 +61,15 @@ def delete_applicant(applicant_id: int, db: Session = Depends(get_db)):
     a = db.get(Applicant, applicant_id)
     if not a:
         raise HTTPException(404, "Applicant not found.")
+    audio_paths = [
+        Path(interview.audio_path)
+        for interview in a.interviews
+        if interview.audio_path
+    ]
     db.delete(a)
     db.commit()
+    for audio_path in audio_paths:
+        try:
+            audio_path.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("Could not remove applicant audio at %s", audio_path)

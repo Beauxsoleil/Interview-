@@ -70,6 +70,7 @@ export const api = {
   },
   getInterview: (id) => req(`/api/interviews/${id}`),
   createInterview: (formData, options) => upload("/api/interviews", formData, options),
+  combineInterviews: (payload) => req("/api/interviews/combine", json(payload)),
   updateInterview: (id, payload) =>
     req(`/api/interviews/${id}`, json(payload, "PATCH")),
   deleteInterview: (id) => req(`/api/interviews/${id}`, { method: "DELETE" }),
@@ -80,6 +81,8 @@ export const api = {
   reviewTranscript: (id) =>
     req(`/api/interviews/${id}/transcript/review`, { method: "POST" }),
   reprocess: (id) => req(`/api/interviews/${id}/reprocess`, { method: "POST" }),
+  rebuildCombined: (id) =>
+    req(`/api/interviews/${id}/rebuild-combined`, { method: "POST" }),
   extractProfile: (id) =>
     req(`/api/interviews/${id}/extract-profile`, { method: "POST" }),
   audioUrl: (id) => `/api/interviews/${id}/audio`,

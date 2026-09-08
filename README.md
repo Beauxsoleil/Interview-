@@ -29,7 +29,11 @@ human-reviewed updates to the APPLEMDT/PIBASE applicant tracker.
    locking a phone does not cancel it.
 7. **Organize** interviews by applicant, status, and custom labels, with a
    sortable/filterable list and full-text search across transcripts and profiles.
-8. **Review and sync** proposed applicant fields into PIBASE. Existing values are
+8. **Combine split recordings** into one reviewable interview without rewriting
+   or deleting the original audio. Playback advances across parts, transcript
+   timestamps retain their source recording, and source corrections trigger a
+   safe rebuild before extraction or sync.
+9. **Review and sync** proposed applicant fields into PIBASE. Existing values are
    shown beside Gemini's proposal, every structured field requires approval, and
    the recruiter summary is added as a new note rather than overwriting history.
 
@@ -72,10 +76,12 @@ frontend/  React + Vite + Tailwind
     lib/api.js           API client
 ```
 
-**Data model:** each interview is one record tying together applicant,
-interview date, audio file, transcript, and profile. Applicants can have
-multiple interviews over time; interviews carry a status (Pending Review /
-Priority / Approved / Rejected) and any number of custom labels.
+**Data model:** a normal interview ties together one applicant, audio file,
+transcript, and profile. A combined interview is a non-destructive parent over
+two or more normal interviews: it stores a merged transcript with source/local
+timestamp provenance while the source rows and audio remain intact. Applicants
+can have multiple interviews over time; interviews carry a status (Pending
+Review / Priority / Approved / Rejected) and any number of custom labels.
 
 ---
 
@@ -222,6 +228,7 @@ The project follows the intended incremental build order:
 6. ✅ Transcript UI: speaker rename + playback synced to text
 7. ✅ Shared installable audio pipeline package
 8. ✅ Human-reviewed PIBASE synchronization and durable audit log
+9. ✅ Non-destructive multi-part interviews with composite playback and rebuilds
 
 ---
 
@@ -230,6 +237,7 @@ The project follows the intended incremental build order:
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/api/interviews` | Upload audio + create interview (starts a transcription job) |
+| `POST` | `/api/interviews/combine` | Combine 2–20 reviewed recordings from one applicant, preserving sources |
 | `GET` | `/api/interviews` | List with `q`, `status`, `label_id`, `applicant_id`, `sort`, `order` |
 | `GET` | `/api/interviews/{id}` | Full detail (transcript + profile + latest job) |
 | `PATCH` | `/api/interviews/{id}` | Update title / status / date / labels |
@@ -237,6 +245,7 @@ The project follows the intended incremental build order:
 | `PATCH` | `/api/interviews/{id}/transcript` | Save reviewed transcript corrections and create a new revision |
 | `POST` | `/api/interviews/{id}/transcript/review` | Mark the current transcript revision reviewed |
 | `POST` | `/api/interviews/{id}/reprocess` | Re-run transcription |
+| `POST` | `/api/interviews/{id}/rebuild-combined` | Rebuild a combined transcript after a source correction |
 | `POST` | `/api/interviews/{id}/extract-profile` | (Re)extract the profile |
 | `GET` | `/api/interviews/{id}/audio` | Stream the stored audio |
 | `GET` | `/api/health` | Which backends are active |
@@ -260,6 +269,11 @@ The project follows the intended incremental build order:
 - Long recordings are decoded to mono 16 kHz audio and transcribed sequentially
   in five-minute windows with eight seconds of context. Each window owns a
   non-overlapping portion of the timeline, preventing duplicate boundary text.
+- Split recordings can be combined after each source transcript is reviewed.
+  Sources are hidden from the normal list while attached, remain individually
+  accessible from the combined interview, and return to the list if the combined
+  view is deleted. Audio is played as a source-aware playlist rather than being
+  physically concatenated.
 - Whisper, WhisperX alignment, and Pyannote models are cached in the single
   processing worker after their first use. Pipeline logs report diarization,
   transcription, merge, total, and per-chunk elapsed times for tuning.
