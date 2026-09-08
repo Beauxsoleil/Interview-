@@ -87,6 +87,10 @@ class TranscriptSegment(BaseModel):
     start: float
     end: float
     text: str
+    source_interview_id: int | None = None
+    source_start: float | None = None
+    source_end: float | None = None
+    part_number: int | None = None
 
 
 class TranscriptOut(BaseModel):
@@ -156,19 +160,46 @@ class InterviewSummary(BaseModel):
     applicant_name: str
     title: str | None
     interview_date: datetime
+    audio_filename: str | None
+    audio_duration_seconds: float | None
     status: str
     labels: list[LabelOut]
     has_transcript: bool
     has_profile: bool
+    transcript_reviewed: bool
+    is_combined: bool
+    part_count: int
+    combined_needs_rebuild: bool
     latest_job: JobOut | None
     created_at: datetime
 
 
-class InterviewDetail(InterviewSummary):
+class InterviewPartOut(BaseModel):
+    id: int
+    position: int
     audio_filename: str | None
     audio_duration_seconds: float | None
+    offset_seconds: float
+    transcript_revision: int | None
+    transcript_reviewed: bool
+
+
+class InterviewDetail(InterviewSummary):
     transcript: TranscriptOut | None
     profile: ProfileOut | None
+    parts: list[InterviewPartOut] = Field(default_factory=list)
+
+
+class CombineInterviewsRequest(BaseModel):
+    source_interview_ids: list[int] = Field(min_length=2, max_length=20)
+    title: str | None = Field(default=None, max_length=255)
+
+    @field_validator("source_interview_ids")
+    @classmethod
+    def unique_sources(cls, values: list[int]) -> list[int]:
+        if len(values) != len(set(values)):
+            raise ValueError("Each source interview may only be selected once.")
+        return values
 
 
 class InterviewUpdate(BaseModel):

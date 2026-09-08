@@ -13,6 +13,10 @@ MIGRATIONS = (
     (6, "sync_drafts", "source_transcript_revision", "ALTER TABLE sync_drafts ADD COLUMN source_transcript_revision INTEGER"),
     (7, "sync_logs", "request_id", "ALTER TABLE sync_logs ADD COLUMN request_id VARCHAR(64)"),
     (8, "interviews", "delete_requested", "ALTER TABLE interviews ADD COLUMN delete_requested BOOLEAN NOT NULL DEFAULT 0"),
+    (9, "interviews", "is_combined", "ALTER TABLE interviews ADD COLUMN is_combined BOOLEAN NOT NULL DEFAULT 0"),
+    (10, "interviews", "combined_parent_id", "ALTER TABLE interviews ADD COLUMN combined_parent_id INTEGER REFERENCES interviews(id) ON DELETE SET NULL"),
+    (11, "interviews", "part_number", "ALTER TABLE interviews ADD COLUMN part_number INTEGER"),
+    (12, "interviews", "combined_needs_rebuild", "ALTER TABLE interviews ADD COLUMN combined_needs_rebuild BOOLEAN NOT NULL DEFAULT 0"),
 )
 
 

@@ -22,6 +22,12 @@ from sqlalchemy.orm import Session, joinedload
 
 from .. import jobs
 from ..audio_validation import AudioValidationError, validate_audio
+from ..combined_interviews import (
+    CombinedInterviewError,
+    create_combined_interview,
+    mark_combined_parent_stale,
+    rebuild_combined_interview,
+)
 from ..config import settings
 from ..database import get_db
 from ..models import (
@@ -38,6 +44,7 @@ from ..schemas import (
     InterviewDetail,
     InterviewSummary,
     InterviewUpdate,
+    CombineInterviewsRequest,
     JobOut,
     SpeakerLabelUpdate,
     TranscriptUpdate,
@@ -54,6 +61,7 @@ _QUERY_LOAD = (
     joinedload(Interview.transcript),
     joinedload(Interview.profile),
     joinedload(Interview.jobs),
+    joinedload(Interview.source_parts).joinedload(Interview.transcript),
 )
 
 
@@ -184,6 +192,7 @@ def list_interviews(
         .options(*_QUERY_LOAD)
         .join(Applicant)
         .filter(Interview.delete_requested.is_(False))
+        .filter(Interview.combined_parent_id.is_(None))
     )
 
     if status:
@@ -220,6 +229,20 @@ def list_interviews(
     return [interview_summary(i) for i in interviews]
 
 
+@router.post("/combine", response_model=InterviewDetail, status_code=201)
+def combine_interviews(
+    payload: CombineInterviewsRequest, db: Session = Depends(get_db)
+):
+    try:
+        combined = create_combined_interview(
+            db, payload.source_interview_ids, payload.title
+        )
+    except CombinedInterviewError as error:
+        db.rollback()
+        raise HTTPException(409, str(error)) from error
+    return interview_detail(_get_or_404(db, combined.id))
+
+
 def _profile_search_clause(like: str):
     from ..models import Profile
 
@@ -252,6 +275,12 @@ def update_interview(
 @router.delete("/{interview_id}", status_code=204)
 def delete_interview(interview_id: int, db: Session = Depends(get_db)):
     interview = _get_or_404(db, interview_id)
+    if interview.combined_parent_id:
+        raise HTTPException(
+            409,
+            "This recording belongs to a combined interview. Delete the combined "
+            "interview first to restore its source recordings.",
+        )
     active_jobs = [
         job
         for job in interview.jobs
@@ -267,6 +296,10 @@ def delete_interview(interview_id: int, db: Session = Depends(get_db)):
         return
 
     audio_path = Path(interview.audio_path) if interview.audio_path else None
+    if interview.is_combined:
+        for part in interview.source_parts:
+            part.combined_parent_id = None
+            part.part_number = None
     db.delete(interview)
     db.commit()
     if audio_path:
@@ -311,6 +344,7 @@ def update_speakers(
         transcript.applicant_speaker = payload.applicant_speaker
 
     _invalidate_derived_data(db, interview, transcript)
+    mark_combined_parent_stale(db, interview)
     db.commit()
     db.refresh(transcript)
     return TranscriptOut.from_orm_transcript(transcript)
@@ -334,6 +368,22 @@ def update_transcript(
     if not transcript:
         raise HTTPException(404, "Interview has no transcript yet.")
     segments = [segment.model_dump() for segment in payload.segments]
+    if interview.is_combined:
+        current_segments = json.loads(transcript.segments_json)
+        provenance_fields = (
+            "source_interview_id",
+            "source_start",
+            "source_end",
+            "part_number",
+        )
+        if len(segments) != len(current_segments) or any(
+            new.get(field) != current.get(field)
+            for new, current in zip(segments, current_segments, strict=True)
+            for field in provenance_fields
+        ):
+            raise HTTPException(
+                400, "Combined transcript source timestamps cannot be changed."
+            )
     transcript.segments_json = json.dumps(segments)
     transcript.text = render_text(
         segments, json.loads(transcript.speaker_labels_json or "{}")
@@ -341,6 +391,7 @@ def update_transcript(
     transcript.revision += 1
     transcript.edited_at = utcnow()
     _invalidate_derived_data(db, interview, transcript)
+    mark_combined_parent_stale(db, interview)
     db.commit()
     db.refresh(transcript)
     return TranscriptOut.from_orm_transcript(transcript)
@@ -349,6 +400,10 @@ def update_transcript(
 @router.post("/{interview_id}/transcript/review", response_model=TranscriptOut)
 def review_transcript(interview_id: int, db: Session = Depends(get_db)):
     interview = _get_or_404(db, interview_id)
+    if interview.combined_needs_rebuild:
+        raise HTTPException(
+            409, "Rebuild the combined transcript before marking it reviewed."
+        )
     transcript = interview.transcript
     if not transcript:
         raise HTTPException(404, "Interview has no transcript yet.")
@@ -373,9 +428,22 @@ def reprocess(interview_id: int, db: Session = Depends(get_db)):
     return JobOut.model_validate(job)
 
 
+@router.post("/{interview_id}/rebuild-combined", response_model=InterviewDetail)
+def rebuild_combined(interview_id: int, db: Session = Depends(get_db)):
+    interview = _get_or_404(db, interview_id)
+    try:
+        rebuilt = rebuild_combined_interview(db, interview)
+    except CombinedInterviewError as error:
+        db.rollback()
+        raise HTTPException(409, str(error)) from error
+    return interview_detail(_get_or_404(db, rebuilt.id))
+
+
 @router.post("/{interview_id}/extract-profile", response_model=JobOut)
 def extract_profile(interview_id: int, db: Session = Depends(get_db)):
     interview = _get_or_404(db, interview_id)
+    if interview.combined_needs_rebuild:
+        raise HTTPException(409, "Rebuild and review the combined transcript first.")
     if not interview.transcript:
         raise HTTPException(400, "Interview has no transcript to profile.")
     if not interview.transcript.reviewed_at:

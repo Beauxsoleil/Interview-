@@ -17,6 +17,7 @@ from interview_pipeline_core import runner
 from interview_pipeline_core.merge import render_text
 
 from .database import SessionLocal
+from .combined_interviews import mark_combined_parent_stale
 from .models import Interview, Job, JobState, Profile, SyncDraft, Transcript
 from .pipeline import profile as profile_pipeline
 from .pipeline_runtime import pipeline_config
@@ -229,6 +230,7 @@ def _run_transcription_job(job_id: int) -> None:
         draft = db.query(SyncDraft).filter_by(interview_id=interview.id).first()
         if draft:
             db.delete(draft)
+        mark_combined_parent_stale(db, interview)
         db.add(transcript)
         db.commit()
 
@@ -362,6 +364,7 @@ def _extract_and_save_profile(
     transcript = interview.transcript
     if not transcript.reviewed_at:
         raise ValueError("Transcript must be reviewed before profile extraction.")
+    source_revision = transcript.revision
     labels = json.loads(transcript.speaker_labels_json or "{}")
     applicant = transcript.applicant_speaker or "the applicant"
     applicant_role = labels.get(applicant, applicant)
@@ -369,6 +372,22 @@ def _extract_and_save_profile(
     profile_data, model = profile_pipeline.extract_profile(
         transcript.text, applicant_role, on_retry=on_retry
     )
+
+    # Extraction can take minutes. Do not attach an answer produced from a
+    # transcript that changed or became stale while Gemini was working.
+    db.expire_all()
+    interview = db.get(Interview, interview_id)
+    if (
+        interview is None
+        or interview.transcript is None
+        or interview.transcript.revision != source_revision
+        or not interview.transcript.reviewed_at
+        or interview.combined_needs_rebuild
+    ):
+        raise ValueError(
+            "Transcript changed during profile extraction. Review it and try again."
+        )
+    transcript = interview.transcript
 
     profile = interview.profile or Profile(interview_id=interview.id)
     profile.data_json = profile_data.model_dump_json()

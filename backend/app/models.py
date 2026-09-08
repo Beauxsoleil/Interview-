@@ -7,8 +7,8 @@ Applicant  1---*  Interview  1---1  Transcript
                               1---1  Job (latest processing job)
 Interview  *---*  Label  (via interview_labels)
 
-Each interview is a single record tying together: applicant, interview date,
-audio file, transcript, and extracted profile.
+A normal interview ties together applicant, date, audio, transcript, and profile.
+A combined interview is a non-destructive parent over multiple normal interviews.
 """
 from __future__ import annotations
 
@@ -105,6 +105,15 @@ class Interview(Base):
     audio_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     audio_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     delete_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    # A combined interview is a non-destructive parent over two or more source
+    # interviews. Source rows keep their original audio/transcript/profile and
+    # are hidden from the normal list while attached to the parent.
+    is_combined: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    combined_parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("interviews.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    part_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    combined_needs_rebuild: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -125,6 +134,18 @@ class Interview(Base):
         back_populates="interview",
         cascade="all, delete-orphan",
         order_by="Job.created_at.desc()",
+    )
+    combined_parent: Mapped["Interview | None"] = relationship(
+        "Interview",
+        remote_side=[id],
+        back_populates="source_parts",
+        foreign_keys=[combined_parent_id],
+    )
+    source_parts: Mapped[list["Interview"]] = relationship(
+        "Interview",
+        back_populates="combined_parent",
+        foreign_keys=[combined_parent_id],
+        order_by="Interview.part_number",
     )
 
 

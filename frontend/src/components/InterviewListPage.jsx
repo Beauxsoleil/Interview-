@@ -73,6 +73,13 @@ export default function InterviewListPage() {
     }
   };
 
+  const combineCandidates = interviews.filter(
+    (interview) =>
+      !interview.is_combined &&
+      interview.has_transcript &&
+      interview.transcript_reviewed,
+  );
+
   return (
     <div>
       <div className="mb-5 flex items-center justify-between">
@@ -140,6 +147,25 @@ export default function InterviewListPage() {
 
       {error && <div role="alert" className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
 
+      {filters.applicant_id && combineCandidates.length >= 2 && (
+        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium text-blue-950">
+              Is this one interview split across recordings?
+            </p>
+            <p className="mt-1 text-sm text-blue-800">
+              {combineCandidates.length} reviewed recordings can be combined without deleting the originals.
+            </p>
+          </div>
+          <Link
+            to={`/combine?applicant_id=${filters.applicant_id}`}
+            className="btn-primary shrink-0 text-center"
+          >
+            Combine recordings
+          </Link>
+        </div>
+      )}
+
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : interviews.length === 0 ? (
@@ -169,6 +195,7 @@ export default function InterviewListPage() {
                   <span>{formatDate(iv.interview_date)}</span>
                   {iv.has_transcript && <Dot label="transcript" />}
                   {iv.has_profile && <Dot label="profile" />}
+                  {iv.is_combined && <Dot label={`${iv.part_count} parts`} />}
                   {iv.labels.map((l) => (
                     <LabelChip key={l.id} label={l} />
                   ))}

@@ -89,6 +89,8 @@ def _log_out(log: SyncLog) -> SyncLogOut:
 @router.post("/extract", response_model=SyncExtractOut)
 def extract(interview_id: int, db: Session = Depends(get_db)):
     interview = _interview(db, interview_id)
+    if interview.combined_needs_rebuild:
+        raise HTTPException(409, "Rebuild and review the combined transcript first.")
     if not interview.transcript:
         raise HTTPException(400, "Interview has no transcript.")
     transcript = interview.transcript
@@ -98,6 +100,7 @@ def extract(interview_id: int, db: Session = Depends(get_db)):
         )
     labels = json.loads(transcript.speaker_labels_json or "{}")
     applicant = transcript.applicant_speaker or "the applicant"
+    source_revision = transcript.revision
     try:
         extraction, model = extract_sync_profile(
             transcript.text, labels.get(applicant, applicant)
@@ -110,6 +113,21 @@ def extract(interview_id: int, db: Session = Depends(get_db)):
         ) from error
     except SyncProfileError as error:
         raise HTTPException(400, str(error)) from error
+
+    # A source correction can invalidate a combined transcript while this
+    # synchronous Gemini request is in flight. Never save that stale draft.
+    db.expire_all()
+    interview = _interview(db, interview_id)
+    if (
+        not interview.transcript
+        or interview.transcript.revision != source_revision
+        or not interview.transcript.reviewed_at
+        or interview.combined_needs_rebuild
+    ):
+        raise HTTPException(
+            409, "The transcript changed during extraction. Review it and try again."
+        )
+    transcript = interview.transcript
 
     draft = db.query(SyncDraft).filter_by(interview_id=interview_id).first()
     if not draft:
