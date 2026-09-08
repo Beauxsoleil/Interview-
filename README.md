@@ -25,6 +25,8 @@ human-reviewed updates to the APPLEMDT/PIBASE applicant tracker.
 6. **Extract** a structured applicant profile from the reviewed revision with the Gemini API — into a JSON
    schema first, then rendered as a readable summary card. Fields the transcript
    doesn't cover are flagged *"not mentioned"* rather than guessed.
+   Extraction runs as a recoverable background job, so leaving the page or
+   locking a phone does not cancel it.
 7. **Organize** interviews by applicant, status, and custom labels, with a
    sortable/filterable list and full-text search across transcripts and profiles.
 8. **Review and sync** proposed applicant fields into PIBASE. Existing values are

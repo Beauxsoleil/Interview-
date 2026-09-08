@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -64,6 +65,21 @@ class JobCancellationTests(unittest.TestCase):
         job = self.db.get(Job, self.job_id)
         with self.assertRaises(jobs.JobCancelled):
             jobs._update_job(self.db, job, progress=75, stage="transcription")
+
+    def test_profile_extraction_is_queued_for_background_processing(self):
+        session_factory = sessionmaker(bind=self.engine)
+        fake_executor = Mock()
+        with (
+            patch.object(jobs, "SessionLocal", session_factory),
+            patch.object(jobs, "_executor", fake_executor),
+        ):
+            job_id = jobs.enqueue_profile_extraction(self.interview_id)
+
+        queued = self.db.get(Job, job_id)
+        self.db.refresh(queued)
+        self.assertEqual(queued.kind, "profile")
+        self.assertEqual(queued.state, JobState.QUEUED.value)
+        fake_executor.submit.assert_called_once_with(jobs._run_profile_job, job_id)
 
 
 if __name__ == "__main__":
