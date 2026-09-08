@@ -122,6 +122,9 @@ Edit `backend/.env`:
 | --- | --- |
 | `GEMINI_API_KEY` | Enables Gemini profile extraction. Without it, transcription still works. |
 | `PROFILE_MODEL` | Gemini model for extraction (default `gemini-3.6-flash`). |
+| `PROFILE_RETRY_ATTEMPTS` | Total attempts for temporary Gemini failures (default `5`). |
+| `PROFILE_RETRY_BASE_SECONDS` | Initial retry delay before exponential backoff (default `5`). |
+| `PROFILE_RETRY_MAX_SECONDS` | Maximum delay between profile attempts (default `60`). |
 | `HF_TOKEN` | HuggingFace token — required by pyannote to download the diarization model. |
 | `PIPELINE_BACKEND` | `auto` (default) uses ML if installed, else stub; `stub` forces the sample backend. |
 | `WHISPER_MODEL` | `tiny`…`large-v3` (default `base`). |
@@ -247,8 +250,10 @@ The project follows the intended incremental build order:
 
 ## Notes & limitations (v1)
 
-- Job runner is a single-worker, restart-recovering thread pool — appropriate
-  for one machine; use a durable external queue before horizontal scaling.
+- Job processing uses separate restart-recovering single-worker pools for
+  transcription and profile extraction. Temporary Gemini capacity failures use
+  exponential backoff with jitter without holding up queued audio. Use a durable
+  external queue before horizontal scaling.
 - Deleting an active interview requests cooperative cancellation. The file is
   retained until the worker reaches the next safe stage/chunk boundary, then
   removed before the next queued recording proceeds.

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # --- Gemini (profile extraction) ---
     gemini_api_key: str | None = None
     profile_model: str = "gemini-3.6-flash"
+    profile_retry_attempts: int = 5
+    profile_retry_base_seconds: float = 5.0
+    profile_retry_max_seconds: float = 60.0
 
     # --- Privileged PIBASE Firestore sync ---
     google_application_credentials: Path | None = None

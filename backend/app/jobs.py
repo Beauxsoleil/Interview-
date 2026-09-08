@@ -25,6 +25,8 @@ logger = logging.getLogger("interview.jobs")
 
 # Transcription is CPU/GPU-bound; keep concurrency low to avoid oversubscription.
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pipeline")
+# Profile retries may wait on external capacity and must not block transcription.
+_profile_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="profile")
 
 
 class JobCancelled(RuntimeError):
@@ -87,7 +89,7 @@ def enqueue_profile_extraction(interview_id: int) -> int:
         job_id = job.id
     finally:
         db.close()
-    _executor.submit(_run_profile_job, job_id)
+    _profile_executor.submit(_run_profile_job, job_id)
     return job_id
 
 
@@ -134,7 +136,8 @@ def recover_interrupted_jobs() -> int:
         _remove_audio(audio_path)
     for job_id, kind in recovered:
         target = _run_profile_job if kind == "profile" else _run_transcription_job
-        _executor.submit(target, job_id)
+        executor = _profile_executor if kind == "profile" else _executor
+        executor.submit(target, job_id)
     return len(recovered)
 
 
@@ -277,13 +280,57 @@ def _run_profile_job(job_id: int) -> None:
                 error="Transcript review is required before profile extraction.",
             )
             return
-        _update_job(db, job, state=JobState.RUNNING.value, progress=10, stage="extracting profile")
-        _extract_and_save_profile(db, interview.id)
+        _update_job(
+            db,
+            job,
+            state=JobState.RUNNING.value,
+            progress=10,
+            stage="extracting profile",
+        )
+
+        def on_retry(
+            attempt: int, attempts: int, delay: float, status: int | None
+        ) -> None:
+            reason = (
+                "Gemini is busy"
+                if status in {429, 503}
+                else "Gemini is unavailable"
+            )
+            _update_job(
+                db,
+                job,
+                progress=min(85, 10 + (attempt * 12)),
+                stage=(
+                    f"{reason}; retrying in {round(delay)}s "
+                    f"(attempt {attempt + 1} of {attempts})"
+                ),
+            )
+
+        _extract_and_save_profile(db, interview.id, on_retry=on_retry)
         _update_job(db, job, state=JobState.DONE.value, progress=100, stage="profile ready")
     except JobCancelled:
         db.rollback()
         logger.info("Profile job %s cancelled; releasing worker", job_id)
         _finalize_cancelled_job(db, job_id)
+    except profile_pipeline.ProfileServiceUnavailable as error:
+        logger.warning(
+            "Profile job %s exhausted temporary-error retries: %s", job_id, error
+        )
+        try:
+            job = db.get(Job, job_id)
+            if job:
+                _update_job(
+                    db,
+                    job,
+                    state=JobState.ERROR.value,
+                    stage="Gemini temporarily unavailable",
+                    error=(
+                        "Gemini is temporarily busy after several automatic retries. "
+                        "Please try profile extraction again in a few minutes."
+                    ),
+                )
+        except Exception:
+            pass
     except Exception as error:  # noqa: BLE001
         logger.error("Profile job %s failed: %s\n%s", job_id, error, traceback.format_exc())
         try:
@@ -302,7 +349,12 @@ def _run_profile_job(job_id: int) -> None:
         db.close()
 
 
-def _extract_and_save_profile(db, interview_id: int) -> Profile:
+def _extract_and_save_profile(
+    db,
+    interview_id: int,
+    *,
+    on_retry=None,
+) -> Profile:
     interview = db.get(Interview, interview_id)
     if interview is None or interview.transcript is None:
         raise ValueError("Interview has no transcript to profile.")
@@ -315,7 +367,7 @@ def _extract_and_save_profile(db, interview_id: int) -> Profile:
     applicant_role = labels.get(applicant, applicant)
 
     profile_data, model = profile_pipeline.extract_profile(
-        transcript.text, applicant_role
+        transcript.text, applicant_role, on_retry=on_retry
     )
 
     profile = interview.profile or Profile(interview_id=interview.id)
