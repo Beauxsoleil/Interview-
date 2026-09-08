@@ -71,7 +71,7 @@ class JobCancellationTests(unittest.TestCase):
         fake_executor = Mock()
         with (
             patch.object(jobs, "SessionLocal", session_factory),
-            patch.object(jobs, "_executor", fake_executor),
+            patch.object(jobs, "_profile_executor", fake_executor),
         ):
             job_id = jobs.enqueue_profile_extraction(self.interview_id)
 
