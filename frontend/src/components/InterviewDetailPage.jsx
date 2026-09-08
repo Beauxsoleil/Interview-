@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { LabelChip, StatusBadge, formatDate } from "../lib/ui.jsx";
@@ -231,10 +231,42 @@ export default function InterviewDetailPage() {
       </div>
 
       {iv.transcript && !processing && reviewed && (
-        <PibaseSyncPanel interview={iv} />
+        <PanelErrorBoundary key={`${iv.id}-${iv.transcript.revision}`}>
+          <PibaseSyncPanel interview={iv} />
+        </PanelErrorBoundary>
       )}
     </div>
   );
+}
+
+class PanelErrorBoundary extends Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.error("PIBASE panel failed to render", error);
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <section role="alert" className="mt-4 card p-5">
+          <h2 className="font-semibold text-rose-700">PIBASE panel could not load</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            The interview and reviewed transcript are still safe. Reload this page
+            to try the PIBASE panel again.
+          </p>
+          <button className="btn-ghost mt-3" onClick={() => window.location.reload()}>
+            Reload page
+          </button>
+        </section>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function ProgressBar({ job }) {

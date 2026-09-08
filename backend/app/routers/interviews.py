@@ -34,13 +34,11 @@ from ..models import (
     Transcript,
     utcnow,
 )
-from ..pipeline.profile import ProfileExtractionError
 from ..schemas import (
     InterviewDetail,
     InterviewSummary,
     InterviewUpdate,
     JobOut,
-    ProfileOut,
     SpeakerLabelUpdate,
     TranscriptUpdate,
     TranscriptOut,
@@ -375,7 +373,7 @@ def reprocess(interview_id: int, db: Session = Depends(get_db)):
     return JobOut.model_validate(job)
 
 
-@router.post("/{interview_id}/extract-profile", response_model=ProfileOut)
+@router.post("/{interview_id}/extract-profile", response_model=JobOut)
 def extract_profile(interview_id: int, db: Session = Depends(get_db)):
     interview = _get_or_404(db, interview_id)
     if not interview.transcript:
@@ -384,13 +382,8 @@ def extract_profile(interview_id: int, db: Session = Depends(get_db)):
         raise HTTPException(
             409, "Review the transcript and applicant speaker before profile extraction."
         )
-    try:
-        # Runs in its own session; the returned instance is detached but fully
-        # loaded, so serialize it directly (don't touch it with this session).
-        profile = jobs.run_profile_extraction(interview.id)
-    except ProfileExtractionError as e:
-        raise HTTPException(400, str(e))
-    return ProfileOut.from_orm_profile(profile)
+    job_id = jobs.enqueue_profile_extraction(interview.id)
+    return JobOut.model_validate(db.get(Job, job_id))
 
 
 @router.get("/{interview_id}/jobs", response_model=list[JobOut])

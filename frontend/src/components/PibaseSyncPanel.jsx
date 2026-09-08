@@ -13,6 +13,17 @@ const FIELD_LABELS = {
   generalArea: "General area",
 };
 
+function createRequestId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  // randomUUID is unavailable in some browsers on private HTTP/Tailscale
+  // origins. This key only deduplicates a reviewed write; it is not a secret.
+  const time = Date.now().toString(36);
+  const random = Math.random().toString(36).slice(2, 14);
+  return `sync-${time}-${random}`;
+}
+
 export default function PibaseSyncPanel({ interview }) {
   const [extraction, setExtraction] = useState(null);
   const [candidates, setCandidates] = useState([]);
@@ -27,7 +38,7 @@ export default function PibaseSyncPanel({ interview }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(createRequestId);
 
   const targetPayload = useMemo(
     () =>
@@ -83,7 +94,7 @@ export default function PibaseSyncPanel({ interview }) {
     );
     if (!data) return;
     setProposal(data);
-    setRequestId(crypto.randomUUID());
+    setRequestId(createRequestId());
     setApproved(new Set());
     setUnarchive(false);
     setResult(null);

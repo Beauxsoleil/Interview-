@@ -59,10 +59,42 @@ def enqueue_transcription(interview_id: int) -> int:
     return job_id
 
 
-def recover_interrupted_jobs() -> int:
-    """Requeue the newest unfinished transcription for each interview on startup."""
+def enqueue_profile_extraction(interview_id: int) -> int:
+    """Queue profile extraction so mobile clients need not hold a request open."""
     db = SessionLocal()
-    recovered: list[int] = []
+    try:
+        active = (
+            db.query(Job)
+            .filter(
+                Job.interview_id == interview_id,
+                Job.kind == "profile",
+                Job.state.in_([JobState.QUEUED.value, JobState.RUNNING.value]),
+            )
+            .order_by(Job.created_at.desc())
+            .first()
+        )
+        if active:
+            return active.id
+        job = Job(
+            interview_id=interview_id,
+            kind="profile",
+            state=JobState.QUEUED.value,
+            stage="queued for profile extraction",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+    finally:
+        db.close()
+    _executor.submit(_run_profile_job, job_id)
+    return job_id
+
+
+def recover_interrupted_jobs() -> int:
+    """Requeue the newest unfinished pipeline job for each interview on startup."""
+    db = SessionLocal()
+    recovered: list[tuple[int, str]] = []
     audio_to_remove: list[Path] = []
     try:
         pending_deletes = (
@@ -76,7 +108,7 @@ def recover_interrupted_jobs() -> int:
         active = (
             db.query(Job)
             .filter(
-                Job.kind == "transcribe",
+                Job.kind.in_(["transcribe", "profile"]),
                 Job.state.in_([JobState.QUEUED.value, JobState.RUNNING.value]),
             )
             .order_by(Job.interview_id, Job.created_at.desc())
@@ -94,14 +126,15 @@ def recover_interrupted_jobs() -> int:
             job.stage = "recovered after restart"
             job.progress = 0
             job.error = None
-            recovered.append(job.id)
+            recovered.append((job.id, job.kind))
         db.commit()
     finally:
         db.close()
     for audio_path in audio_to_remove:
         _remove_audio(audio_path)
-    for job_id in recovered:
-        _executor.submit(_run_transcription_job, job_id)
+    for job_id, kind in recovered:
+        target = _run_profile_job if kind == "profile" else _run_transcription_job
+        _executor.submit(target, job_id)
     return len(recovered)
 
 
@@ -212,6 +245,56 @@ def _run_transcription_job(job_id: int) -> None:
                     state=JobState.ERROR.value,
                     error="Processing failed. Review server logs, then retry.",
                     stage="error",
+                )
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def _run_profile_job(job_id: int) -> None:
+    db = SessionLocal()
+    try:
+        job = db.get(Job, job_id)
+        if not job:
+            return
+        interview = db.get(Interview, job.interview_id)
+        if not interview or not interview.transcript:
+            _update_job(
+                db,
+                job,
+                state=JobState.ERROR.value,
+                stage="error",
+                error="Interview has no transcript to profile.",
+            )
+            return
+        if not interview.transcript.reviewed_at:
+            _update_job(
+                db,
+                job,
+                state=JobState.ERROR.value,
+                stage="error",
+                error="Transcript review is required before profile extraction.",
+            )
+            return
+        _update_job(db, job, state=JobState.RUNNING.value, progress=10, stage="extracting profile")
+        _extract_and_save_profile(db, interview.id)
+        _update_job(db, job, state=JobState.DONE.value, progress=100, stage="profile ready")
+    except JobCancelled:
+        db.rollback()
+        logger.info("Profile job %s cancelled; releasing worker", job_id)
+        _finalize_cancelled_job(db, job_id)
+    except Exception as error:  # noqa: BLE001
+        logger.error("Profile job %s failed: %s\n%s", job_id, error, traceback.format_exc())
+        try:
+            job = db.get(Job, job_id)
+            if job:
+                _update_job(
+                    db,
+                    job,
+                    state=JobState.ERROR.value,
+                    stage="error",
+                    error="Profile extraction failed. Review server logs, then retry.",
                 )
         except Exception:
             pass
